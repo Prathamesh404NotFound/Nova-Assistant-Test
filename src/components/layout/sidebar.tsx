@@ -20,7 +20,7 @@ import {
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { to: "/dashboard", icon: MessageSquare, label: "Chat" },
+  { to: "/dashboard", icon: MessageSquare, label: "Home" },
   { to: "/tasks", icon: CheckSquare, label: "Tasks" },
   { to: "/memory", icon: Brain, label: "Memory" },
   { to: "/calendar", icon: Calendar, label: "Calendar" },

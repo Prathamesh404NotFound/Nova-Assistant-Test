@@ -7,11 +7,9 @@
 import {
   pipeline,
   env,
-  AutoTokenizer,
   type TextGenerationPipeline,
-  type PreTrainedTokenizer,
 } from "@huggingface/transformers";
-import { localAICache, type ModelMetadata } from "./LocalAICache";
+import { localAICache } from "./LocalAICache";
 import { localAIDetector } from "./LocalAIDetector";
 
 // Model configuration — correct HuggingFace repo name with -ONNX suffix
@@ -20,7 +18,6 @@ const LOCAL_MODEL_VERSION = "qwen3-0.6b-onnx-v1";
 
 // Lazy singleton
 let pipelineInstance: TextGenerationPipeline | null = null;
-let tokenizerInstance: PreTrainedTokenizer | null = null;
 let isInitializing = false;
 let initPromise: Promise<TextGenerationPipeline> | null = null;
 
@@ -37,31 +34,39 @@ export interface GenerateCallbacks {
 }
 
 /**
+ * Detect the best available device for inference.
+ */
+async function detectBestDevice(): Promise<"webgpu" | "wasm"> {
+  try {
+    if (await localAIDetector.detect().then((d) => d.webgpuAvailable)) {
+      return "webgpu";
+    }
+  } catch {
+    // ignore
+  }
+  return "wasm";
+}
+
+/**
  * Download model with progress tracking.
  */
 export async function downloadModel(
   onProgress?: (progress: { loaded: number; total: number; percent: number; speed?: number }) => void
 ): Promise<void> {
-  // Check if already cached
   const cached = await localAICache.isModelCached();
   if (cached) return;
-
-  const startTime = Date.now();
 
   try {
     if (onProgress) {
       onProgress({ loaded: 0, total: 0, percent: 0 });
     }
 
-    // Initialize the pipeline — this triggers the download
     await getOrCreatePipeline();
 
-    // After pipeline loads, the model is downloaded
     if (onProgress) {
       onProgress({ loaded: 100, total: 100, percent: 100 });
     }
 
-    // Mark as cached
     localAIDetector.markModelCached();
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err));
@@ -74,7 +79,7 @@ export async function downloadModel(
     }
     if (msg.includes("404") || msg.includes("Not Found")) {
       throw new Error(
-        "Model not found on HuggingFace. The model repository may have been renamed. Please report this issue."
+        "Model not found on HuggingFace. The model repository may have been renamed or is temporarily unavailable."
       );
     }
     if (msg.includes("OOM") || msg.includes("out of memory") || msg.includes("memory")) {
@@ -87,36 +92,20 @@ export async function downloadModel(
         "Network error downloading the model. Check your internet connection and try again."
       );
     }
+    if (msg.includes("Unsupported device")) {
+      throw new Error(
+        "Your browser does not support the required hardware acceleration. Try using Chrome or Edge for Local AI."
+      );
+    }
 
     throw new Error(`Failed to load model: ${msg}`);
   }
 }
 
 /**
- * Auto-detect the best available dtype for the model.
- */
-async function selectBestDtype(): Promise<string> {
-  try {
-    // Try to use the registry to detect available dtypes
-    const { ModelRegistry } = await import("@huggingface/transformers");
-    const availableDtypes = await ModelRegistry.get_available_dtypes(MODEL_ID);
-
-    // Prefer smaller quantizations in order
-    const preferred = ["q4", "q4f16", "q8", "int8", "fp16", "fp32"];
-    const dtype = preferred.find((d) => availableDtypes.includes(d)) ?? "fp32";
-
-    if (import.meta.env.DEV) {
-      console.log("[Nova Local AI] Available dtypes:", availableDtypes, "→ selected:", dtype);
-    }
-    return dtype;
-  } catch {
-    // Fallback to q4 if registry detection fails
-    return "q4";
-  }
-}
-
-/**
  * Get or create the pipeline (singleton pattern).
+ * Uses q4 dtype (4-bit quantization) which is the smallest available for this model.
+ * Detects WebGPU availability and falls back to WASM/CPU when not available.
  */
 async function getOrCreatePipeline(): Promise<TextGenerationPipeline> {
   if (pipelineInstance) return pipelineInstance;
@@ -129,20 +118,15 @@ async function getOrCreatePipeline(): Promise<TextGenerationPipeline> {
       env.allowLocalModels = false;
       env.cacheDir = "nova-ai-cache";
 
-      // Auto-detect best dtype
-      const dtype = await selectBestDtype();
+      // Detect best device (WebGPU preferred, WASM fallback)
+      const device = await detectBestDevice();
 
+      // Use q4 (4-bit quantization) — the standard quantization for this model
+      // This is smaller and works on both WebGPU and WASM backends
       const pipe = await pipeline("text-generation", MODEL_ID, {
-        device: "webgpu" as any,
-        dtype: dtype as any,
+        device: device as any,
+        dtype: "q4" as any,
       });
-
-      // Also load the tokenizer for proper chat template formatting
-      try {
-        tokenizerInstance = await AutoTokenizer.from_pretrained(MODEL_ID);
-      } catch {
-        // Tokenizer loading failure is non-critical; pipeline has its own
-      }
 
       pipelineInstance = pipe;
       isInitializing = false;
@@ -179,8 +163,6 @@ export async function generateLocally(
   const temperature = options?.temperature ?? 0.7;
   const topP = options?.topP ?? 0.9;
 
-  // Use the pipeline directly with chat-style messages
-  // Transformers.js handles the chat template internally for Qwen3
   const chatMessages = messages.map((m) => ({
     role: m.role as "user" | "assistant" | "system",
     content: m.content,
@@ -194,7 +176,6 @@ export async function generateLocally(
   });
 
   const generated = Array.isArray(result) ? result[0] : result;
-  // The pipeline returns the full conversation; extract the last assistant message
   const lastMsg = (generated as any).generated_text;
   if (Array.isArray(lastMsg)) {
     const lastAssistant = lastMsg.filter((m: any) => m.role === "assistant").pop();
@@ -208,8 +189,6 @@ export async function generateLocally(
 
 /**
  * Generate with streaming support.
- * Transformers.js v4 may not support true token streaming for text-generation,
- * so we accumulate the full response and deliver it as a single update.
  */
 export async function generateStream(
   messages: Array<{ role: string; content: string }>,
@@ -280,7 +259,6 @@ export function unloadModel(): void {
       (pipelineInstance as any).dispose?.();
     } catch { /* ignore */ }
     pipelineInstance = null;
-    tokenizerInstance = null;
     initPromise = null;
     isInitializing = false;
   }
