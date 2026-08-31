@@ -8,12 +8,27 @@ import { useOfflineSTT } from "@/hooks/use-offline-stt";
 import { useOfflineTTS } from "@/hooks/use-offline-tts";
 import { useChat } from "@/hooks/use-chat";
 import { useNavigate } from "react-router";
-import { Send, Mic, MicOff, Trash2, Zap, Sparkles, Clock, CheckCircle2 } from "lucide-react";
+import { logActivity } from "@/lib/local-store";
+import {
+  Send,
+  Mic,
+  MicOff,
+  Trash2,
+  Zap,
+  Sparkles,
+  Clock,
+  CheckCircle2,
+  MessageSquare,
+  Plus,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 
 export default function Chat() {
   const [input, setInput] = useState("");
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [geminiKey] = useState(() => localStorage.getItem("nova_gemini_key") || "");
+  const [showSidebar, setShowSidebar] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
@@ -27,7 +42,16 @@ export default function Chat() {
     [navigate]
   );
 
-  const { messages, isStreaming, sendMessage, clearMessages } = useChat({
+  const {
+    messages,
+    isStreaming,
+    sendMessage,
+    clearMessages,
+    conversations,
+    activeConvId,
+    loadConversation,
+    deleteConversationById,
+  } = useChat({
     apiKey: geminiKey,
     onNavigate: handleNavigate,
     onSpeak: (text) => {
@@ -53,6 +77,7 @@ export default function Chat() {
     (text: string, isFinal: boolean) => {
       if (isFinal && text.trim()) {
         sendMessage(text.trim());
+        logActivity("chat", `Voice: "${text.trim().slice(0, 40)}"`, "mic");
       } else if (text.trim()) {
         setInput(text);
       }
@@ -67,6 +92,7 @@ export default function Chat() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
+    logActivity("chat", `Sent: "${input.trim().slice(0, 40)}"`, "send");
     sendMessage(input);
     setInput("");
   };
@@ -75,9 +101,16 @@ export default function Chat() {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (!input.trim() || isStreaming) return;
+      logActivity("chat", `Sent: "${input.trim().slice(0, 40)}"`, "send");
       sendMessage(input);
       setInput("");
     }
+  };
+
+  const handleNewChat = () => {
+    clearMessages();
+    stopTTS();
+    setAvatarState("idle");
   };
 
   const quickPrompts = [
@@ -93,6 +126,22 @@ export default function Chat() {
       {/* Header */}
       <div className="border-b border-[#252540] px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-[#6e6e8a] hover:text-white lg:hidden"
+            onClick={() => setShowSidebar(!showSidebar)}
+          >
+            {showSidebar ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-[#6e6e8a] hover:text-white hidden lg:flex"
+            onClick={() => setShowSidebar(!showSidebar)}
+          >
+            {showSidebar ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+          </Button>
           <NovaAvatar state={avatarState} size={40} />
           <div>
             <div className="flex items-center gap-2">
@@ -111,6 +160,14 @@ export default function Chat() {
             variant="ghost"
             size="sm"
             className="text-[#6e6e8a] hover:text-white"
+            onClick={handleNewChat}
+          >
+            <Plus className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-[#6e6e8a] hover:text-white"
             onClick={() => {
               clearMessages();
               stopTTS();
@@ -122,79 +179,184 @@ export default function Chat() {
         </div>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
-        {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto py-8">
-            <NovaAvatar state="idle" size={90} />
-            <h2 className="text-lg font-bold text-white mt-4">Nova Personal Operating System</h2>
-            <p className="text-[#6e6e8a] mt-2 text-sm max-w-md">
-              Local-first architecture. Greetings, time, tasks, navigation, and memories run locally with zero API latency. Gemini is only escalated for complex reasoning.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-6 w-full">
-              {quickPrompts.map((p, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => sendMessage(p.label)}
-                  className="flex items-center justify-between p-2.5 rounded-lg bg-[#121222] hover:bg-[#1a1a32] border border-[#252540] text-xs text-slate-300 transition-colors text-left"
+      <div className="flex flex-1 overflow-hidden">
+        {/* Conversation Sidebar */}
+        {showSidebar && (
+          <div className="w-64 border-r border-[#252540] bg-[#0a0a14] overflow-y-auto shrink-0 hidden lg:block">
+            <div className="p-3 space-y-1">
+              <Button
+                onClick={handleNewChat}
+                className="w-full justify-start gap-2 text-[#6e6e8a] hover:text-white hover:bg-[#1e1e38]"
+                variant="ghost"
+                size="sm"
+              >
+                <Plus className="h-4 w-4" />
+                New Chat
+              </Button>
+              {conversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  className={`group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
+                    activeConvId === conv.id
+                      ? "bg-[#00d4ff]/10 text-[#00d4ff]"
+                      : "text-[#6e6e8a] hover:text-[#e8e8f8] hover:bg-[#1e1e38]"
+                  }`}
+                  onClick={() => loadConversation(conv.id)}
                 >
-                  <span className="flex items-center gap-2">
-                    {p.icon}
-                    {p.label}
-                  </span>
-                  <span
-                    className={`text-[9px] px-1.5 py-0.5 rounded ${
-                      p.local ? "bg-cyan-500/20 text-cyan-400" : "bg-purple-500/20 text-purple-400"
-                    }`}
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                  <span className="text-xs truncate flex-1">{conv.title || "New Chat"}</span>
+                  <button
+                    className="opacity-0 group-hover:opacity-100 text-[#6e6e8a] hover:text-[#f43f5e] transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteConversationById(conv.id);
+                    }}
                   >
-                    {p.local ? "LOCAL" : "GEMINI"}
-                  </span>
-                </button>
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </div>
               ))}
+              {conversations.length === 0 && (
+                <p className="text-xs text-[#6e6e8a]/50 text-center py-4">No conversations yet</p>
+              )}
             </div>
           </div>
         )}
 
-        {messages.map((msg) => (
-          <motion.div
-            key={msg.id}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+        {/* Mobile Sidebar Overlay */}
+        {showSidebar && (
+          <div
+            className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+            onClick={() => setShowSidebar(false)}
           >
-            <Card
-              className={`max-w-[85%] sm:max-w-[75%] p-3.5 text-sm leading-relaxed ${
-                msg.role === "user"
-                  ? "bg-[#00d4ff]/10 border-[#00d4ff]/30 text-[#e8e8f8]"
-                  : "bg-[#111122] border-[#252540] text-[#e8e8f8]"
-              }`}
+            <div
+              className="w-64 h-full bg-[#0a0a14] border-r border-[#252540] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
             >
-              <p className="whitespace-pre-wrap">{msg.content || (msg.isStreaming ? "..." : "")}</p>
-              {msg.role === "assistant" && (msg.source || msg.latencyMs !== undefined) && (
-                <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
-                  <div className="flex items-center gap-1.5">
+              <div className="p-3 space-y-1">
+                <Button
+                  onClick={() => {
+                    handleNewChat();
+                    setShowSidebar(false);
+                  }}
+                  className="w-full justify-start gap-2 text-[#6e6e8a] hover:text-white hover:bg-[#1e1e38]"
+                  variant="ghost"
+                  size="sm"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Chat
+                </Button>
+                {conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    className={`group flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors ${
+                      activeConvId === conv.id
+                        ? "bg-[#00d4ff]/10 text-[#00d4ff]"
+                        : "text-[#6e6e8a] hover:text-[#e8e8f8] hover:bg-[#1e1e38]"
+                    }`}
+                    onClick={() => {
+                      loadConversation(conv.id);
+                      setShowSidebar(false);
+                    }}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                    <span className="text-xs truncate flex-1">{conv.title || "New Chat"}</span>
+                    <button
+                      className="opacity-0 group-hover:opacity-100 text-[#6e6e8a] hover:text-[#f43f5e] transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteConversationById(conv.id);
+                      }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+                {conversations.length === 0 && (
+                  <p className="text-xs text-[#6e6e8a]/50 text-center py-4">No conversations yet</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Messages */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto py-8">
+              <NovaAvatar state="idle" size={90} />
+              <h2 className="text-lg font-bold text-white mt-4">Nova Personal Operating System</h2>
+              <p className="text-[#6e6e8a] mt-2 text-sm max-w-md">
+                Local-first architecture. Greetings, time, tasks, navigation, and memories run locally with zero API latency. Gemini is only escalated for complex reasoning.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-6 w-full">
+                {quickPrompts.map((p, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      logActivity("chat", `Quick: "${p.label.slice(0, 30)}"`, "zap");
+                      sendMessage(p.label);
+                    }}
+                    className="flex items-center justify-between p-2.5 rounded-lg bg-[#121222] hover:bg-[#1a1a32] border border-[#252540] text-xs text-slate-300 transition-colors text-left"
+                  >
+                    <span className="flex items-center gap-2">
+                      {p.icon}
+                      {p.label}
+                    </span>
                     <span
-                      className={`px-1.5 py-0.5 rounded font-bold ${
-                        msg.source === "local"
-                          ? "bg-cyan-500/20 text-cyan-400"
-                          : "bg-purple-500/20 text-purple-400"
+                      className={`text-[9px] px-1.5 py-0.5 rounded ${
+                        p.local ? "bg-cyan-500/20 text-cyan-400" : "bg-purple-500/20 text-purple-400"
                       }`}
                     >
-                      {msg.source ? msg.source.toUpperCase() : "LOCAL"}
+                      {p.local ? "LOCAL" : "GEMINI"}
                     </span>
-                    {msg.intent && <span className="text-slate-500">[{msg.intent}]</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((msg) => (
+            <motion.div
+              key={msg.id}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <Card
+                className={`max-w-[85%] sm:max-w-[75%] p-3.5 text-sm leading-relaxed ${
+                  msg.role === "user"
+                    ? "bg-[#00d4ff]/10 border-[#00d4ff]/30 text-[#e8e8f8]"
+                    : "bg-[#111122] border-[#252540] text-[#e8e8f8]"
+                }`}
+              >
+                <p className="whitespace-pre-wrap">{msg.content || (msg.isStreaming ? "..." : "")}</p>
+                {msg.role === "assistant" && (msg.source || msg.latencyMs !== undefined) && (
+                  <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-bold ${
+                          msg.source === "local"
+                            ? "bg-cyan-500/20 text-cyan-400"
+                            : "bg-purple-500/20 text-purple-400"
+                        }`}
+                      >
+                        {msg.source ? msg.source.toUpperCase() : "LOCAL"}
+                      </span>
+                      {msg.intent && <span className="text-slate-500">[{msg.intent}]</span>}
+                    </div>
+                    {msg.latencyMs !== undefined && (
+                      <span className="text-slate-500 flex items-center gap-1">
+                        <Zap className="w-3 h-3 text-cyan-400" />
+                        {msg.latencyMs}ms
+                      </span>
+                    )}
                   </div>
-                  {msg.latencyMs !== undefined && (
-                    <span className="text-slate-500 flex items-center gap-1">
-                      <Zap className="w-3 h-3 text-cyan-400" />
-                      {msg.latencyMs}ms
-                    </span>
-                  )}
-                </div>
-              )}
-            </Card>
-          </motion.div>
-        ))}
+                )}
+              </Card>
+            </motion.div>
+          ))}
+        </div>
       </div>
 
       {/* Input */}

@@ -8,8 +8,11 @@ import { StatusIndicator } from "@/components/nova/status-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { useWakeWord } from "@/hooks/use-wake-word";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
-import { useOfflineTTS } from "@/hooks/use-offline-tts";
 import { callGemini } from "@/lib/gemini";
+import { getTasks } from "@/lib/rtdb";
+import { getMemories } from "@/lib/rtdb";
+import { getConversations } from "@/lib/local-store";
+import { logActivity } from "@/lib/local-store";
 import {
   Mic,
   MicOff,
@@ -21,6 +24,10 @@ import {
   LogOut,
   Volume2,
   VolumeX,
+  Calendar,
+  Mail,
+  Globe,
+  Code,
 } from "lucide-react";
 
 const fadeUp = {
@@ -33,12 +40,12 @@ const fadeUp = {
 };
 
 const quickCommands = [
-  { label: "What's on my calendar?", icon: MessageSquare, action: "calendar" },
-  { label: "Summarize my emails", icon: MessageSquare, action: "email" },
+  { label: "What's on my calendar?", icon: Calendar, action: "calendar" },
+  { label: "Summarize my emails", icon: Mail, action: "email" },
   { label: "Create a task", icon: CheckSquare, action: "task" },
   { label: "Remember something", icon: Brain, action: "memory" },
-  { label: "Run automation", icon: Zap, action: "automation" },
-  { label: "Open settings", icon: Settings, action: "settings" },
+  { label: "Browse the web", icon: Globe, action: "browser" },
+  { label: "Open coding sandbox", icon: Code, action: "coding" },
 ];
 
 function getGreeting(): string {
@@ -57,6 +64,28 @@ export default function Dashboard() {
   const [novaResponse, setNovaResponse] = useState("");
   const [isMuted, setIsMuted] = useState(false);
   const [geminiKey] = useState(() => localStorage.getItem("nova_gemini_key") || "");
+  const [taskCount, setTaskCount] = useState(0);
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [convCount, setConvCount] = useState(0);
+
+  // Load real counts
+  useEffect(() => {
+    const loadCounts = async () => {
+      try {
+        const uid = user?.uid || "";
+        if (uid) {
+          const tasks = await getTasks(uid);
+          setTaskCount(tasks.filter((t) => t.status !== "completed").length);
+          const memories = await getMemories(uid);
+          setMemoryCount(memories.length);
+        }
+        setConvCount(getConversations().length);
+      } catch {
+        // Ignore
+      }
+    };
+    loadCounts();
+  }, [user]);
 
   const handleTranscript = useCallback(
     async (text: string, isFinal: boolean) => {
@@ -66,6 +95,7 @@ export default function Dashboard() {
       }
       setAvatarState("thinking");
       setNovaResponse("");
+      logActivity("voice", `Voice command: "${text.slice(0, 50)}"`, "mic");
       try {
         const response = await callGemini(geminiKey, text);
         setNovaResponse(response);
@@ -116,6 +146,8 @@ export default function Dashboard() {
         memory: "/memory",
         automation: "/automations",
         settings: "/settings",
+        browser: "/browser",
+        coding: "/coding",
       };
       navigate(routes[action] || "/chat");
     },
@@ -123,6 +155,7 @@ export default function Dashboard() {
   );
 
   const handleSignOut = async () => {
+    logActivity("auth", "Signed out", "logout");
     await signOut();
     navigate("/");
   };
@@ -268,11 +301,15 @@ export default function Dashboard() {
           className="grid grid-cols-1 sm:grid-cols-3 gap-3"
         >
           {[
-            { label: "Tasks Today", value: "0", color: "#10b981" },
-            { label: "Memories", value: "0", color: "#8b5cf6" },
-            { label: "Conversations", value: "0", color: "#00d4ff" },
+            { label: "Tasks Pending", value: taskCount, color: "#10b981", route: "/tasks" },
+            { label: "Memories", value: memoryCount, color: "#8b5cf6", route: "/memory" },
+            { label: "Conversations", value: convCount, color: "#00d4ff", route: "/chat" },
           ].map((stat) => (
-            <Card key={stat.label} className="nova-glass p-4">
+            <Card
+              key={stat.label}
+              className="nova-glass nova-glass-hover p-4 cursor-pointer"
+              onClick={() => navigate(stat.route)}
+            >
               <p className="text-xs text-[#6e6e8a] uppercase tracking-wider">{stat.label}</p>
               <p className="text-2xl font-bold mt-1" style={{ color: stat.color }}>
                 {stat.value}

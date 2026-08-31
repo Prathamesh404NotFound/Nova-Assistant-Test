@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { addMemory, getMemories, deleteMemory, type RTDBMemory } from "@/lib/rtdb";
 import { Plus, Brain, User, Folder, Lightbulb, StickyNote, X, Trash2 } from "lucide-react";
+import { logActivity } from "@/lib/local-store";
 
 type Category = RTDBMemory["category"];
 
@@ -44,15 +45,18 @@ export default function MemoryPage() {
   const addNew = useCallback(async () => {
     if (!newKey.trim() || !newContent.trim() || !userId) return;
     await addMemory(userId, { category: newCategory, key: newKey.trim(), content: newContent.trim() });
+    logActivity("memory", `Saved memory: ${newKey.trim()}`, "brain");
     setNewKey(""); setNewContent(""); setShowNew(false);
     await refresh();
   }, [newKey, newContent, newCategory, userId, refresh]);
 
   const remove = useCallback(async (id: string) => {
     if (!userId) return;
+    const mem = memories.find((m) => m.id === id);
     await deleteMemory(userId, id);
+    if (mem) logActivity("memory", `Deleted memory: ${mem.key}`, "trash");
     await refresh();
-  }, [userId, refresh]);
+  }, [userId, memories, refresh]);
 
   const filtered = filter === "all" ? memories : memories.filter((m) => m.category === filter);
 
