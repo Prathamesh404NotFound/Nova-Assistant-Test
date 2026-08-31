@@ -9,6 +9,7 @@ import {
   createTask, getTasks, updateTask, deleteTask, type RTDBTask,
 } from "@/lib/rtdb";
 import { Plus, CheckCircle2, Circle, Clock, AlertTriangle, Trash2, X } from "lucide-react";
+import { logActivity } from "@/lib/local-store";
 
 const priorityColors: Record<string, string> = {
   low: "text-[#6e6e8a] bg-[#6e6e8a]/10",
@@ -58,6 +59,7 @@ export default function Tasks() {
       status: "pending",
       priority: newPriority,
     });
+    logActivity("task", `Created task: ${newTitle.trim()}`, "check-square");
     setNewTitle("");
     setShowNew(false);
     await refreshTasks();
@@ -68,14 +70,17 @@ export default function Tasks() {
     if (!task || !userId) return;
     const next = task.status === "completed" ? "pending" : "completed";
     await updateTask(userId, id, { status: next });
+    logActivity("task", `${next === "completed" ? "Completed" : "Reopened"} task: ${task.title}`, "check-square");
     await refreshTasks();
   }, [tasks, userId, refreshTasks]);
 
   const removeTask = useCallback(async (id: string) => {
     if (!userId) return;
+    const task = tasks.find((t) => t.id === id);
     await deleteTask(userId, id);
+    if (task) logActivity("task", `Deleted task: ${task.title}`, "trash");
     await refreshTasks();
-  }, [userId, refreshTasks]);
+  }, [userId, tasks, refreshTasks]);
 
   const pending = tasks.filter((t) => t.status !== "completed");
   const completed = tasks.filter((t) => t.status === "completed");
