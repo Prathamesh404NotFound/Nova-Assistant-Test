@@ -6,11 +6,9 @@ import {
   Smartphone,
   Wifi,
   Monitor,
-  Battery,
   Globe,
   Mic,
   Volume2,
-  Camera,
 } from "lucide-react";
 
 const fadeUp = {

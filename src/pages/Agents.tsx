@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
+import { useNavigate } from "react-router";
 import { motion } from "framer-motion";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -103,6 +104,7 @@ const agents: Agent[] = [
 
 export default function AgentsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   return (
     <main className="min-h-screen bg-[#06060c] px-4 sm:px-6 py-6 sm:py-10">
@@ -169,8 +171,7 @@ export default function AgentsPage() {
                           size="sm"
                           onClick={() => {
                             logActivity("agent", `Opened ${agent.name}`, "bot");
-                            window.location.hash = "";
-                            window.location.href = agent.route;
+                            navigate(agent.route);
                           }}
                           className="bg-[#00d4ff] text-[#06060c] hover:bg-[#00d4ff]/80 text-xs"
                         >
