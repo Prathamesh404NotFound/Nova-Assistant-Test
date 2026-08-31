@@ -10,16 +10,19 @@ import {
 } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
 
-const MOCK_GUEST_USER = {
-  uid: "guest-nova-os-user",
-  email: "guest@nova.os",
-  displayName: "Guest User",
-  isAnonymous: true,
-  emailVerified: true,
-} as unknown as User;
+/**
+ * Check if Firebase is configured with real credentials (not demo defaults).
+ */
+function isFirebaseConfigured(): boolean {
+  const key = import.meta.env.VITE_FIREBASE_API_KEY as string;
+  // Demo key from firebase.ts fallback
+  return !!key && key !== "AIzaSyDemoNovaAIOSApiKeyForTesting123" && key.length > 20;
+}
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(() => {
+    // Only restore from localStorage if Firebase is actually configured
+    if (!isFirebaseConfigured()) return null;
     try {
       const local = localStorage.getItem("nova_local_user");
       return local ? JSON.parse(local) : null;
@@ -30,6 +33,12 @@ export function useAuth() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    // If Firebase isn't configured, skip auth listener
+    if (!isFirebaseConfigured()) {
+      setIsLoading(false);
+      return;
+    }
+
     let unsub: () => void = () => {};
     try {
       unsub = onAuthStateChanged(
@@ -46,12 +55,10 @@ export function useAuth() {
               })
             );
           } else {
+            setUser(null);
             try {
-              const local = localStorage.getItem("nova_local_user");
-              if (!local) setUser(null);
-            } catch {
-              setUser(null);
-            }
+              localStorage.removeItem("nova_local_user");
+            } catch { /* ignore */ }
           }
           setIsLoading(false);
         },
@@ -67,35 +74,24 @@ export function useAuth() {
 
   const signIn = useCallback(
     async (method: string, formData?: FormData) => {
+      // Block sign-in attempts when Firebase isn't configured
+      if (!isFirebaseConfigured()) {
+        throw new Error(
+          "Firebase is not configured. Add your Firebase project credentials to the .env file as VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, etc."
+        );
+      }
+
       switch (method) {
         case "anonymous": {
-          try {
-            const res = await signInAnonymously(auth);
-            setUser(res.user);
-            return res;
-          } catch {
-            setUser(MOCK_GUEST_USER);
-            localStorage.setItem("nova_local_user", JSON.stringify(MOCK_GUEST_USER));
-            return { user: MOCK_GUEST_USER };
-          }
+          const res = await signInAnonymously(auth);
+          setUser(res.user);
+          return res;
         }
 
         case "google": {
-          try {
-            const res = await signInWithPopup(auth, googleProvider);
-            setUser(res.user);
-            return res;
-          } catch {
-            const mockGoogleUser = {
-              uid: "google-nova-os-user",
-              email: "user@gmail.com",
-              displayName: "Demo User",
-              isAnonymous: false,
-            } as unknown as User;
-            setUser(mockGoogleUser);
-            localStorage.setItem("nova_local_user", JSON.stringify(mockGoogleUser));
-            return { user: mockGoogleUser };
-          }
+          const res = await signInWithPopup(auth, googleProvider);
+          setUser(res.user);
+          return res;
         }
 
         case "email-otp": {
@@ -103,26 +99,14 @@ export function useAuth() {
           const password = formData?.get("password") as string;
           const mode = formData?.get("mode") as string;
 
-          try {
-            if (mode === "signup") {
-              const res = await createUserWithEmailAndPassword(auth, email, password);
-              setUser(res.user);
-              return res;
-            }
-            const res = await signInWithEmailAndPassword(auth, email, password);
+          if (mode === "signup") {
+            const res = await createUserWithEmailAndPassword(auth, email, password);
             setUser(res.user);
             return res;
-          } catch {
-            const mockEmailUser = {
-              uid: "user-" + Date.now(),
-              email: email || "user@nova.os",
-              displayName: (email || "user@nova.os").split("@")[0],
-              isAnonymous: false,
-            } as unknown as User;
-            setUser(mockEmailUser);
-            localStorage.setItem("nova_local_user", JSON.stringify(mockEmailUser));
-            return { user: mockEmailUser };
           }
+          const res = await signInWithEmailAndPassword(auth, email, password);
+          setUser(res.user);
+          return res;
         }
 
         default:
@@ -135,15 +119,11 @@ export function useAuth() {
   const signOut = useCallback(async () => {
     try {
       localStorage.removeItem("nova_local_user");
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
     setUser(null);
     try {
       await firebaseSignOut(auth);
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
   }, []);
 
   return {
