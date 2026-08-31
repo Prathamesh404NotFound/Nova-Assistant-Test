@@ -4,11 +4,19 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
-import { ArrowRight, Loader2, Mail, UserX, Chrome } from "lucide-react";
+import { ArrowRight, Loader2, Mail, UserX, Chrome, AlertTriangle, ExternalLink } from "lucide-react";
 import React, { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 interface AuthProps { redirectAfterAuth?: string; }
+
+/**
+ * Check if Firebase is configured with real credentials.
+ */
+function isFirebaseConfigured(): boolean {
+  const key = import.meta.env.VITE_FIREBASE_API_KEY as string;
+  return !!key && key !== "AIzaSyDemoNovaAIOSApiKeyForTesting123" && key.length > 20;
+}
 
 function resolveRedirectAfterAuth(returnTo: string | null, fallback = "/dashboard") {
   if (returnTo?.startsWith("/") && !returnTo.startsWith("//")) return returnTo;
@@ -26,6 +34,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const [isSignup, setIsSignup] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const firebaseReady = isFirebaseConfigured();
 
   useEffect(() => {
     if (!authLoading && isAuthenticated) navigate(redirect);
@@ -91,13 +101,36 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
 
           <form onSubmit={handleEmailAuth}>
             <CardContent className="space-y-3">
+              {/* Firebase Not Configured Warning */}
+              {!firebaseReady && (
+                <div className="p-3 rounded-lg bg-[#f59e0b]/10 border border-[#f59e0b]/20 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-[#f59e0b] shrink-0 mt-0.5" />
+                    <div className="text-xs text-[#f59e0b]">
+                      <p className="font-medium">Firebase not configured</p>
+                      <p className="mt-1 text-[#f59e0b]/80">
+                        Add your Firebase project credentials to enable authentication.
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href="https://console.firebase.google.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[10px] text-[#00d4ff] hover:underline"
+                  >
+                    Open Firebase Console <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+
               {/* Google Sign-in */}
               <Button
                 type="button"
                 variant="outline"
                 className="w-full border-[#252540] bg-[#16162a] text-[#e8e8f8] hover:bg-[#1e1e38]"
                 onClick={handleGoogle}
-                disabled={isLoading}
+                disabled={isLoading || !firebaseReady}
               >
                 <Chrome className="mr-2 h-4 w-4" />
                 Continue with Google
@@ -121,7 +154,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-9 bg-[#16162a] border-[#252540] text-[#e8e8f8] placeholder:text-[#6e6e8a] focus:border-[#00d4ff]/40"
-                  disabled={isLoading}
+                  disabled={isLoading || !firebaseReady}
                   required
                 />
               </div>
@@ -131,7 +164,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="bg-[#16162a] border-[#252540] text-[#e8e8f8] placeholder:text-[#6e6e8a] focus:border-[#00d4ff]/40"
-                disabled={isLoading}
+                disabled={isLoading || !firebaseReady}
                 required
                 minLength={6}
               />
@@ -141,7 +174,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <Button
                 type="submit"
                 className="w-full bg-gradient-to-r from-[#00d4ff] to-[#8b5cf6] text-[#06060c] font-semibold"
-                disabled={isLoading}
+                disabled={isLoading || !firebaseReady}
               >
                 {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
                 {isSignup ? "Create Account" : "Sign In"}
@@ -152,7 +185,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 variant="ghost"
                 className="w-full text-[#6e6e8a] hover:text-[#e8e8f8]"
                 onClick={() => { setIsSignup(!isSignup); setError(null); }}
-                disabled={isLoading}
+                disabled={isLoading || !firebaseReady}
               >
                 {isSignup ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
               </Button>
@@ -162,7 +195,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 variant="outline"
                 className="w-full border-[#252540] bg-[#16162a] text-[#e8e8f8] hover:bg-[#1e1e38]"
                 onClick={handleGuest}
-                disabled={isLoading}
+                disabled={isLoading || !firebaseReady}
               >
                 <UserX className="mr-2 h-4 w-4" />
                 Continue as Guest
