@@ -8,7 +8,10 @@ import { StatusIndicator } from "@/components/nova/status-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { useWakeWord } from "@/hooks/use-wake-word";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
-import { callGemini } from "@/lib/gemini";
+import { routeMessage } from "@/ai/AIRouter";
+import { getAIMode } from "@/ai/local/LocalAISettings";
+import { localAIService } from "@/ai/local/LocalAIService";
+import { DownloadModal } from "@/components/local-ai/DownloadModal";
 import { getTasks } from "@/lib/rtdb";
 import { getMemories } from "@/lib/rtdb";
 import { getConversations } from "@/lib/local-store";
@@ -16,6 +19,8 @@ import { logActivity } from "@/lib/local-store";
 import {
   Mic,
   MicOff,
+  Cpu,
+  Download,
   MessageSquare,
   CheckSquare,
   Brain,
@@ -64,6 +69,9 @@ export default function Dashboard() {
   const [novaResponse, setNovaResponse] = useState("");
   const [isMuted, setIsMuted] = useState(false);
   const [geminiKey] = useState(() => localStorage.getItem("nova_gemini_key") || "");
+  const [showLocalAIDownload, setShowLocalAIDownload] = useState(false);
+  const [localAIAvailable, setLocalAIAvailable] = useState<boolean | null>(null);
+  const [localAICached, setLocalAICached] = useState(false);
   const [taskCount, setTaskCount] = useState(0);
   const [memoryCount, setMemoryCount] = useState(0);
   const [convCount, setConvCount] = useState(0);
@@ -83,9 +91,17 @@ export default function Dashboard() {
       } catch {
         // Ignore
       }
-    };
-    loadCounts();
+    };    loadCounts();
   }, [user]);
+
+  // Check Local AI status
+  useEffect(() => {
+    localAIService.detect().then((avail) => {
+      setLocalAIAvailable(avail.supported);
+    });
+    localAIService.isCached().then(setLocalAICached);
+  }, []);
+
 
   const handleTranscript = useCallback(
     async (text: string, isFinal: boolean) => {
@@ -97,11 +113,11 @@ export default function Dashboard() {
       setNovaResponse("");
       logActivity("voice", `Voice command: "${text.slice(0, 50)}"`, "mic");
       try {
-        const response = await callGemini(geminiKey, text);
-        setNovaResponse(response);
+        const result = await routeMessage(text, [], geminiKey, { mode: getAIMode() });
+        setNovaResponse(result.text);
         setAvatarState("speaking");
         if (!isMuted) {
-          const tts = new SpeechSynthesisUtterance(response);
+          const tts = new SpeechSynthesisUtterance(result.text);
           tts.onend = () => setAvatarState("idle");
           window.speechSynthesis.speak(tts);
         } else {
@@ -190,6 +206,34 @@ export default function Dashboard() {
             </Button>
           </div>
         </motion.header>
+
+        {/* Local AI Onboarding */}
+        {localAIAvailable === true && !localAICached && (
+          <motion.div
+            initial="hidden"
+            animate="visible"
+            variants={fadeUp}
+            custom={0.5}
+          >
+            <Card className="nova-glass p-4 flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#10b981]/20 to-[#00d4ff]/20 flex items-center justify-center shrink-0">
+                <Cpu className="w-5 h-5 text-[#10b981]" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-[#e8e8f8]">Enable Nova Local AI</p>
+                <p className="text-xs text-[#6e6e8a]">Download a small model to chat without Gemini</p>
+              </div>
+              <Button
+                onClick={() => setShowLocalAIDownload(true)}
+                size="sm"
+                className="bg-[#10b981] text-[#06060c] hover:bg-[#10b981]/80 shrink-0"
+              >
+                <Download className="h-3.5 w-3.5 mr-1" />
+                Download
+              </Button>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Avatar Section */}
         <motion.div
@@ -318,6 +362,14 @@ export default function Dashboard() {
           ))}
         </motion.div>
       </div>
+
+      <DownloadModal
+        open={showLocalAIDownload}
+        onClose={() => {
+          setShowLocalAIDownload(false);
+          localAIService.isCached().then(setLocalAICached);
+        }}
+      />
     </main>
   );
 }

@@ -8,6 +8,7 @@ import { useOfflineSTT } from "@/hooks/use-offline-stt";
 import { useOfflineTTS } from "@/hooks/use-offline-tts";
 import { useChat } from "@/hooks/use-chat";
 import { useNavigate } from "react-router";
+import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
 import {
   Send,
@@ -22,6 +23,8 @@ import {
   Plus,
   PanelLeftClose,
   PanelLeftOpen,
+  Square,
+  Download,
 } from "lucide-react";
 
 export default function Chat() {
@@ -29,6 +32,7 @@ export default function Chat() {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [geminiKey] = useState(() => localStorage.getItem("nova_gemini_key") || "");
   const [showSidebar, setShowSidebar] = useState(false);
+  const [aiMode, setAiMode] = useState<AIMode>(getAIMode());
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
@@ -46,9 +50,11 @@ export default function Chat() {
     messages,
     isStreaming,
     sendMessage,
+    stopGeneration,
     clearMessages,
     conversations,
     activeConvId,
+    lastSource,
     loadConversation,
     deleteConversationById,
   } = useChat({
@@ -72,6 +78,11 @@ export default function Chat() {
       setAvatarState("idle");
     }
   }, [isStreaming, isSpeaking]);
+
+  // Refresh mode when chat mounts
+  useEffect(() => {
+    setAiMode(getAIMode());
+  }, []);
 
   const handleTranscript = useCallback(
     (text: string, isFinal: boolean) => {
@@ -113,6 +124,23 @@ export default function Chat() {
     setAvatarState("idle");
   };
 
+  // Source indicator component
+  const SourceBadge = ({ source }: { source?: string }) => {
+    if (!source) return null;
+    const isLocal = source === "local";
+    return (
+      <span
+        className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded ${
+          isLocal
+            ? "bg-[#10b981]/15 text-[#10b981]"
+            : "bg-[#8b5cf6]/15 text-[#8b5cf6]"
+        }`}
+      >
+        {isLocal ? "●" : "☁"} {isLocal ? "On-device" : "Gemini"}
+      </span>
+    );
+  };
+
   const quickPrompts = [
     { label: "What time is it?", icon: <Clock className="w-3 h-3" />, local: true },
     { label: "Create task: Check server logs", icon: <CheckCircle2 className="w-3 h-3" />, local: true },
@@ -146,16 +174,40 @@ export default function Chat() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-white">Nova Hybrid OS</h1>
-              <Badge className="bg-cyan-500/15 text-cyan-400 border-0 text-[10px] font-mono">
-                LOCAL-FIRST
-              </Badge>
+              {lastSource && <SourceBadge source={lastSource} />}
+              {!lastSource && (
+                <Badge className={`border-0 text-[10px] font-mono ${
+                  aiMode === "local"
+                    ? "bg-[#10b981]/15 text-[#10b981]"
+                    : aiMode === "gemini"
+                    ? "bg-[#8b5cf6]/15 text-[#8b5cf6]"
+                    : "bg-cyan-500/15 text-cyan-400"
+                }`}>
+                  {aiMode === "local" ? "● LOCAL" : aiMode === "gemini" ? "☁ GEMINI" : "AUTO"}
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-[#6e6e8a]">
-              {isStreaming ? "Processing intent..." : "Deterministic local router active (<20ms)"}
+              {isStreaming
+                ? "Generating response..."
+                : lastSource
+                ? `Last response: ${lastSource === "local" ? "on-device" : "cloud AI"}`
+                : "Ready to chat"}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isStreaming && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-[#f43f5e] hover:text-[#f43f5e]/80 hover:bg-[#f43f5e]/10"
+              onClick={stopGeneration}
+            >
+              <Square className="h-3.5 w-3.5 mr-1 fill-current" />
+              Stop
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -287,7 +339,11 @@ export default function Chat() {
               <NovaAvatar state="idle" size={90} />
               <h2 className="text-lg font-bold text-white mt-4">Nova Personal Operating System</h2>
               <p className="text-[#6e6e8a] mt-2 text-sm max-w-md">
-                Local-first architecture. Greetings, time, tasks, navigation, and memories run locally with zero API latency. Gemini is only escalated for complex reasoning.
+                {aiMode === "local"
+                  ? "Running in Local AI mode. Casual conversations stay on your device."
+                  : aiMode === "gemini"
+                  ? "Running in Gemini mode. All requests go to cloud AI."
+                  : "Auto mode: Nova routes simple chats locally, complex tasks to Gemini."}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-6 w-full">
                 {quickPrompts.map((p, idx) => (
@@ -334,16 +390,7 @@ export default function Chat() {
                 {msg.role === "assistant" && (msg.source || msg.latencyMs !== undefined) && (
                   <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
                     <div className="flex items-center gap-1.5">
-                      <span
-                        className={`px-1.5 py-0.5 rounded font-bold ${
-                          msg.source === "local"
-                            ? "bg-cyan-500/20 text-cyan-400"
-                            : "bg-purple-500/20 text-purple-400"
-                        }`}
-                      >
-                        {msg.source ? msg.source.toUpperCase() : "LOCAL"}
-                      </span>
-                      {msg.intent && <span className="text-slate-500">[{msg.intent}]</span>}
+                      <SourceBadge source={msg.source} />
                     </div>
                     {msg.latencyMs !== undefined && (
                       <span className="text-slate-500 flex items-center gap-1">
@@ -378,18 +425,35 @@ export default function Chat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a command (e.g. 'time', 'create task', 'remember this', 'open settings')..."
+            placeholder={
+              aiMode === "local"
+                ? "Chat locally (e.g. 'hello', 'tell me a joke', 'what should I watch')..."
+                : aiMode === "gemini"
+                ? "Chat with Gemini (e.g. 'search for...', 'what happened today?')..."
+                : "Type a message (Nova decides local vs cloud)..."
+            }
             rows={1}
             className="flex-1 bg-[#16162a] border border-[#252540] rounded-xl px-4 py-2.5 text-sm text-[#e8e8f8] placeholder:text-[#6e6e8a] focus:outline-none focus:border-[#00d4ff]/40 resize-none"
           />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={!input.trim() || isStreaming}
-            className="bg-[#00d4ff] text-[#06060c] hover:bg-[#00d4ff]/80 shrink-0 font-semibold"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+          {isStreaming ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={stopGeneration}
+              className="bg-[#f43f5e] text-white hover:bg-[#f43f5e]/80 shrink-0 font-semibold h-9"
+            >
+              <Square className="h-4 w-4 fill-current" />
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              size="sm"
+              disabled={!input.trim()}
+              className="bg-[#00d4ff] text-[#06060c] hover:bg-[#00d4ff]/80 shrink-0 font-semibold"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          )}
         </form>
       </div>
     </main>

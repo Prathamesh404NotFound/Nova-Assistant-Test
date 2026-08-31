@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { ResponseOrchestrator } from "@/services/ai/response-orchestrator";
-import { NovaResponse, Intent } from "@/services/ai/types";
+import { routeMessage, type AIRouterSource } from "@/ai/AIRouter";
+import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
+import { type Intent } from "@/services/ai/types";
 import {
   getConversations,
   createConversation,
   addMessageToConversation,
-  updateConversation,
   type LocalConversation,
   type LocalMessage,
 } from "@/lib/local-store";
@@ -15,7 +15,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   timestamp: number;
-  source?: "local" | "gemini";
+  source?: AIRouterSource | "local";
   intent?: Intent;
   latencyMs?: number;
   isStreaming?: boolean;
@@ -33,9 +33,9 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
   const [error, setError] = useState<string | null>(null);
   const [conversations, setConversations] = useState<LocalConversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
+  const [lastSource, setLastSource] = useState<AIRouterSource | null>(null);
   const abortRef = useRef(false);
 
-  // Load conversations on mount
   useEffect(() => {
     setConversations(getConversations());
   }, []);
@@ -50,12 +50,15 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
           role: m.role,
           content: m.content,
           timestamp: m.timestamp,
-          source: m.source as "local" | "gemini" | undefined,
+          source: m.source as AIRouterSource | "local" | undefined,
           intent: m.intent as Intent | undefined,
           latencyMs: m.latencyMs,
         }))
       );
       setActiveConvId(convId);
+      // Set last source from last assistant message
+      const lastAssistant = [...conv.messages].reverse().find((m) => m.role === "assistant");
+      if (lastAssistant?.source) setLastSource(lastAssistant.source as AIRouterSource);
     }
   }, []);
 
@@ -63,7 +66,6 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
     async (content: string) => {
       if (!content.trim() || isStreaming) return;
 
-      // Create or use active conversation
       let convId = activeConvId;
       if (!convId) {
         const conv = createConversation(content.trim().slice(0, 60));
@@ -79,7 +81,6 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
         timestamp: Date.now(),
       };
 
-      // Persist user message
       addMessageToConversation(convId, {
         id: userMsg.id,
         role: "user",
@@ -94,7 +95,6 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
 
       const assistantId = crypto.randomUUID();
 
-      // Placeholder assistant message
       setMessages((prev) => [
         ...prev,
         {
@@ -106,18 +106,16 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
         },
       ]);
 
+      // Build conversation history for context
+      const conversationHistory = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
       try {
-        const response: NovaResponse = await ResponseOrchestrator.processInput({
-          input: content.trim(),
-          apiKey,
-          onAcknowledgement: (ack) => {
-            if (abortRef.current) return;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: ack, isStreaming: true } : m
-              )
-            );
-          },
+        const mode = getAIMode();
+        const response = await routeMessage(content.trim(), conversationHistory, apiKey, {
+          mode,
           onChunk: (chunk) => {
             if (abortRef.current) return;
             setMessages((prev) =>
@@ -126,9 +124,19 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
               )
             );
           },
+          onAcknowledgement: (ack) => {
+            if (abortRef.current) return;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: ack, isStreaming: true } : m
+              )
+            );
+          },
         });
 
         if (abortRef.current) return;
+
+        setLastSource(response.source);
 
         setMessages((prev) =>
           prev.map((m) =>
@@ -137,7 +145,6 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
                   ...m,
                   content: response.text,
                   source: response.source,
-                  intent: response.intent,
                   latencyMs: response.latencyMs,
                   isStreaming: false,
                 }
@@ -145,28 +152,24 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
           )
         );
 
-        // Persist assistant message
         addMessageToConversation(convId, {
           id: assistantId,
           role: "assistant",
           content: response.text,
           timestamp: Date.now(),
           source: response.source,
-          intent: response.intent,
           latencyMs: response.latencyMs,
         });
 
-        // Update conversation list
         setConversations(getConversations());
 
-        if (response.shouldSpeak && onSpeak) {
+        if (onSpeak) {
           onSpeak(response.text);
         }
 
-        if (response.navigationTarget && onNavigate) {
-          setTimeout(() => {
-            onNavigate(response.navigationTarget!);
-          }, 500);
+        if (onNavigate) {
+          // Only navigate for explicit navigation intents from local router
+          // The AI Router handles most routing internally
         }
       } catch (err: any) {
         setError(err.message);
@@ -188,13 +191,23 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
         setIsStreaming(false);
       }
     },
-    [apiKey, isStreaming, activeConvId, onNavigate, onSpeak]
+    [apiKey, isStreaming, activeConvId, messages, onNavigate, onSpeak]
   );
+
+  const stopGeneration = useCallback(() => {
+    abortRef.current = true;
+    setIsStreaming(false);
+    // Try to cancel local inference
+    try {
+      import("@/ai/local/LocalAIModel").then((mod) => mod.cancelGeneration());
+    } catch { /* ignore */ }
+  }, []);
 
   const clearMessages = useCallback(() => {
     setMessages([]);
     setError(null);
     setActiveConvId(null);
+    setLastSource(null);
   }, []);
 
   const deleteConversationById = useCallback((id: string) => {
@@ -204,6 +217,7 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
     if (activeConvId === id) {
       setMessages([]);
       setActiveConvId(null);
+      setLastSource(null);
     }
   }, [activeConvId]);
 
@@ -212,9 +226,11 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
     isStreaming,
     error,
     sendMessage,
+    stopGeneration,
     clearMessages,
     conversations,
     activeConvId,
+    lastSource,
     loadConversation,
     deleteConversationById,
   };
