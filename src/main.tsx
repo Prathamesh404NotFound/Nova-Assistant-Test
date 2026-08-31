@@ -2,7 +2,7 @@ import '@vly-ai/integrations';
 import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { AppLayout } from "@/components/layout/app-layout";
-import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
+import { VlyToolbar } from "./vly-toolbar-readonly";
 import React, { Component, StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
