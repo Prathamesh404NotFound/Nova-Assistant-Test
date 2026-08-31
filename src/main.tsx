@@ -9,26 +9,26 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import "./index.css";
 
 // Lazy load all pages
-const Landing = lazy(() => import("./pages/Landing.tsx"));
-const AuthPage = lazy(() => import("./pages/Auth.tsx"));
-const Dashboard = lazy(() => import("./pages/Dashboard.tsx"));
-const ChatPage = lazy(() => import("./pages/Chat.tsx"));
-const TasksPage = lazy(() => import("./pages/Tasks.tsx"));
-const MemoryPage = lazy(() => import("./pages/Memory.tsx"));
-const SettingsPage = lazy(() => import("./pages/Settings.tsx"));
-const AgentsPage = lazy(() => import("./pages/Agents.tsx"));
-const DevicesPage = lazy(() => import("./pages/Devices.tsx"));
-const CalendarPage = lazy(() => import("./pages/CalendarPage.tsx"));
-const EmailPage = lazy(() => import("./pages/EmailPage.tsx"));
-const MessagesPage = lazy(() => import("./pages/MessagesPage.tsx"));
-const BrowserPage = lazy(() => import("./pages/BrowserPage.tsx"));
-const CodingPage = lazy(() => import("./pages/CodingPage.tsx"));
-const SmartHomePage = lazy(() => import("./pages/SmartHome.tsx"));
-const FilesPage = lazy(() => import("./pages/FilesPage.tsx"));
-const AutomationsPage = lazy(() => import("./pages/Automations.tsx"));
-const ActivityPage = lazy(() => import("./pages/Activity.tsx"));
-const SecurityPage = lazy(() => import("./pages/Security.tsx"));
-const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const Landing = lazy(() => import("./pages/Landing"));
+const AuthPage = lazy(() => import("./pages/Auth"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const ChatPage = lazy(() => import("./pages/Chat"));
+const TasksPage = lazy(() => import("./pages/Tasks"));
+const MemoryPage = lazy(() => import("./pages/Memory"));
+const SettingsPage = lazy(() => import("./pages/Settings"));
+const AgentsPage = lazy(() => import("./pages/Agents"));
+const DevicesPage = lazy(() => import("./pages/Devices"));
+const CalendarPage = lazy(() => import("./pages/CalendarPage"));
+const EmailPage = lazy(() => import("./pages/EmailPage"));
+const MessagesPage = lazy(() => import("./pages/MessagesPage"));
+const BrowserPage = lazy(() => import("./pages/BrowserPage"));
+const CodingPage = lazy(() => import("./pages/CodingPage"));
+const SmartHomePage = lazy(() => import("./pages/SmartHome"));
+const FilesPage = lazy(() => import("./pages/FilesPage"));
+const AutomationsPage = lazy(() => import("./pages/Automations"));
+const ActivityPage = lazy(() => import("./pages/Activity"));
+const SecurityPage = lazy(() => import("./pages/Security"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
   return (
