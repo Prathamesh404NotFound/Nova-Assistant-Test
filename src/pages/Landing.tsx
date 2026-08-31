@@ -13,6 +13,8 @@ import {
   Globe,
   Home,
   Code,
+  Cpu,
+  WifiOff,
 } from "lucide-react";
 
 const fadeUp = {
@@ -44,6 +46,12 @@ const features = [
     color: "#10b981",
   },
   {
+    icon: Cpu,
+    title: "Local AI",
+    desc: "Runs a small AI model on your device. No cloud needed for casual chats.",
+    color: "#10b981",
+  },
+  {
     icon: Globe,
     title: "Browser Agent",
     desc: "Browse the web, extract info, and automate tasks for you.",
@@ -68,9 +76,9 @@ const features = [
     color: "#f43f5e",
   },
   {
-    icon: Zap,
-    title: "Offline-First",
-    desc: "Works without internet. Voice, memory, tasks — all local.",
+    icon: WifiOff,
+    title: "Offline AI",
+    desc: "Local AI model runs on your device. Chat without internet after download.",
     color: "#10b981",
   },
 ];
@@ -176,8 +184,8 @@ export default function Landing() {
             </h1>
             <p className="text-lg text-[#6e6e8a] max-w-2xl mx-auto leading-relaxed">
               Nova is a voice-first personal AI that manages your tasks, answers questions,
-              controls your devices, and integrates with the tools you already use. Say
-              "Hey Nova" and watch it work.
+              controls your devices, and integrates with the tools you already use. With
+              Local AI, casual conversations can stay on your device.
             </p>
           </motion.div>
 
@@ -218,7 +226,11 @@ export default function Landing() {
               End-to-end encrypted
             </span>
             <span className="flex items-center gap-2">
-              <Zap className="h-3.5 w-3.5 text-[#f59e0b]" />
+              <Cpu className="h-3.5 w-3.5 text-[#8b5cf6]" />
+              Local AI on-device
+            </span>
+            <span className="flex items-center gap-2">
+              <WifiOff className="h-3.5 w-3.5 text-[#f59e0b]" />
               Works offline
             </span>
             <span className="flex items-center gap-2">

@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Eye, EyeOff, Save, Shield, Key, Trash2 } from "lucide-react";
+import { LocalAIPanel } from "@/components/local-ai/LocalAIPanel";
+import { Eye, EyeOff, Save, Shield, Key, Trash2, Cpu } from "lucide-react";
 
 interface ApiKeyConfig {
   id: string;
@@ -16,7 +17,7 @@ interface ApiKeyConfig {
 }
 
 const API_KEYS: ApiKeyConfig[] = [
-  { id: "gemini", name: "Gemini API Key", envKey: "nova_gemini_key", description: "Powers AI chat responses", url: "https://aistudio.google.com", required: true },
+  { id: "gemini", name: "Gemini API Key", envKey: "nova_gemini_key", description: "Powers cloud AI chat responses", url: "https://aistudio.google.com", required: false },
   { id: "heygen", name: "HeyGen API Key", envKey: "nova_heygen_key", description: "Real human avatar with lip sync", url: "https://heygen.com", required: false },
   { id: "deepgram", name: "Deepgram API Key", envKey: "nova_deepgram_key", description: "Better speech recognition", url: "https://deepgram.com", required: false },
   { id: "elevenlabs", name: "ElevenLabs API Key", envKey: "nova_elevenlabs_key", description: "Natural voice output", url: "https://elevenlabs.io", required: false },
@@ -78,19 +79,46 @@ export default function SettingsPage() {
         <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0}>
           <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
           <p className="text-sm text-[#6e6e8a] mt-1">
-            API key management · {configured}/{API_KEYS.length} configured
+            AI modes, API keys, and configuration
           </p>
         </motion.div>
 
-        {/* Security Notice */}
+        {/* ── Nova Local AI Section ─────────────────────────── */}
+        <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0.5}>
+          <div className="flex items-center gap-2 mb-2">
+            <Cpu className="h-4 w-4 text-[#00d4ff]" />
+            <h2 className="text-sm font-semibold text-[#e8e8f8] uppercase tracking-wider">
+              Nova Local AI
+            </h2>
+          </div>
+          <LocalAIPanel />
+        </motion.div>
+
+        {/* Divider */}
+        <div className="border-t border-[#252540]" />
+
+        {/* ── API Keys Section ──────────────────────────────── */}
         <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={1}>
+          <div className="flex items-center gap-2 mb-2">
+            <Key className="h-4 w-4 text-[#8b5cf6]" />
+            <h2 className="text-sm font-semibold text-[#e8e8f8] uppercase tracking-wider">
+              API Keys
+            </h2>
+            <Badge className="text-[10px] bg-[#16162a] text-[#6e6e8a] border-0">
+              {configured}/{API_KEYS.length}
+            </Badge>
+          </div>
+        </motion.div>
+
+        {/* Security Notice */}
+        <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={1.5}>
           <Card className="nova-glass p-4 flex items-start gap-3">
             <Shield className="h-5 w-5 text-[#10b981] shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-medium text-[#e8e8f8]">Encrypted & Local</p>
               <p className="text-xs text-[#6e6e8a] mt-1">
                 API keys are stored in your browser's local storage. They never leave your device
-                except when making API calls directly from this app.
+                except when making API calls directly from this app. Local AI requires no API key.
               </p>
             </div>
           </Card>
@@ -171,7 +199,7 @@ export default function SettingsPage() {
             className="w-full bg-gradient-to-r from-[#00d4ff] to-[#8b5cf6] text-[#06060c] font-semibold h-11"
           >
             <Save className="h-4 w-4 mr-2" />
-            {saved ? "✓ Saved!" : "Save All Keys"}
+            {saved ? "✓ Saved!" : "Save API Keys"}
           </Button>
         </motion.div>
       </div>
