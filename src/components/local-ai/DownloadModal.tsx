@@ -42,7 +42,6 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
   useEffect(() => {
     if (open) {
       localAIService.detect().then(setAvailability);
-      // Check if already ready
       localAIService.isCached().then((cached) => {
         if (cached) setState("ready");
       });
@@ -59,7 +58,6 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
         setProgress(p);
       });
       setState("installing");
-      // Brief pause for "installing" state
       await new Promise((r) => setTimeout(r, 500));
       setState("ready");
       onComplete?.();
@@ -135,7 +133,7 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
                     </div>
                     <div className="flex items-center gap-2 text-[#e8e8f8]">
                       <Download className="h-3.5 w-3.5 text-[#8b5cf6]" />
-                      <span>~450 MB</span>
+                      <span>Small quantized model</span>
                     </div>
                     <div className="flex items-center gap-2 text-[#e8e8f8]">
                       <Globe className="h-3.5 w-3.5 text-[#10b981]" />
@@ -239,15 +237,13 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
                   >
                     Start Chatting
                   </Button>
-                  {state === "ready" && (
-                    <Button
-                      onClick={handleDelete}
-                      variant="ghost"
-                      className="text-[#6e6e8a] hover:text-[#f43f5e]"
-                    >
-                      Delete Model
-                    </Button>
-                  )}
+                  <Button
+                    onClick={handleDelete}
+                    variant="ghost"
+                    className="text-[#6e6e8a] hover:text-[#f43f5e]"
+                  >
+                    Delete Model
+                  </Button>
                 </div>
               </div>
             )}

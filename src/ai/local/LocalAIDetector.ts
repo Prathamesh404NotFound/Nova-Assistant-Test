@@ -18,7 +18,7 @@ export interface LocalAIAvailability {
 }
 
 const MODEL_VERSION_KEY = "nova_local_model_version";
-const MODEL_VERSION = "qwen3-0.6b-local-v1";
+const MODEL_VERSION = "qwen3-0.6b-onnx-v1";
 
 export class LocalAIDetector {
   /**
