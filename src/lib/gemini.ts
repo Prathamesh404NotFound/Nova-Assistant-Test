@@ -13,10 +13,9 @@ const DEFAULT_SYSTEM = `You are Nova, a voice-first AI personal operating system
 // Fallback chain: try models in order until one works.
 // Updated to currently supported Gemini models (as of August 2026).
 const MODEL_FALLBACK_CHAIN = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-preview-05-20",
-  "gemini-2.0-flash",
-  "gemini-1.5-flash",
+  "gemini-3.5-flash",
+  "gemini-3.6-flash",
+  "gemini-3.1-flash",
 ];
 
 const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
