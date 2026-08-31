@@ -1,0 +1,6 @@
+{
+  "name": "Nova AI OS",
+  "description": "A futuristic web-based AI operating system interface featuring interactive widgets, agents, smart tools, and dynamic dashboards.",
+  "requestFramePermissions": ["microphone", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

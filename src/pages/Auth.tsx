@@ -1,0 +1,184 @@
+import { Button } from "@/components/ui/button";
+import {
+  Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/hooks/use-auth";
+import { ArrowRight, Loader2, Mail, UserX, Chrome } from "lucide-react";
+import React, { Suspense, useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
+
+interface AuthProps { redirectAfterAuth?: string; }
+
+function resolveRedirectAfterAuth(returnTo: string | null, fallback = "/dashboard") {
+  if (returnTo?.startsWith("/") && !returnTo.startsWith("//")) return returnTo;
+  return fallback;
+}
+
+function Auth({ redirectAfterAuth }: AuthProps = {}) {
+  const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const redirect = resolveRedirectAfterAuth(searchParams.get("returnTo"), redirectAfterAuth);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSignup, setIsSignup] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) navigate(redirect);
+  }, [authLoading, isAuthenticated, navigate, redirect]);
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("email", email);
+      fd.append("password", password);
+      fd.append("mode", isSignup ? "signup" : "signin");
+      await signIn("email-otp", fd);
+      navigate(redirect);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Authentication failed");
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await signIn("google");
+      navigate(redirect);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Google sign-in failed");
+      setIsLoading(false);
+    }
+  };
+
+  const handleGuest = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await signIn("anonymous");
+      navigate(redirect);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Guest sign-in failed");
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex flex-col bg-[#06060c]">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[500px] h-[500px] rounded-full bg-[#00d4ff]/5 blur-[120px]" />
+      <div className="flex-1 flex items-center justify-center relative z-10">
+        <Card className="min-w-[370px] pb-0 border border-[#252540] bg-[#0d0d16]/90 backdrop-blur-xl shadow-2xl shadow-black/50">
+          <CardHeader className="text-center">
+            <div className="flex justify-center">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#00d4ff] to-[#8b5cf6] flex items-center justify-center mb-2 cursor-pointer" onClick={() => navigate("/")}>
+                <span className="text-white font-bold text-xl">N</span>
+              </div>
+            </div>
+            <CardTitle className="text-xl text-[#e8e8f8]">Welcome to Nova</CardTitle>
+            <CardDescription className="text-[#6e6e8a]">
+              {isSignup ? "Create your account" : "Sign in to your AI operating system"}
+            </CardDescription>
+          </CardHeader>
+
+          <form onSubmit={handleEmailAuth}>
+            <CardContent className="space-y-3">
+              {/* Google Sign-in */}
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full border-[#252540] bg-[#16162a] text-[#e8e8f8] hover:bg-[#1e1e38]"
+                onClick={handleGoogle}
+                disabled={isLoading}
+              >
+                <Chrome className="mr-2 h-4 w-4" />
+                Continue with Google
+              </Button>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-[#252540]" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-[#0d0d16] px-2 text-[#6e6e8a]">Or</span>
+                </div>
+              </div>
+
+              {/* Email + Password */}
+              <div className="relative">
+                <Mail className="absolute left-3 top-3 h-4 w-4 text-[#6e6e8a]" />
+                <Input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="pl-9 bg-[#16162a] border-[#252540] text-[#e8e8f8] placeholder:text-[#6e6e8a] focus:border-[#00d4ff]/40"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="bg-[#16162a] border-[#252540] text-[#e8e8f8] placeholder:text-[#6e6e8a] focus:border-[#00d4ff]/40"
+                disabled={isLoading}
+                required
+                minLength={6}
+              />
+
+              {error && <p className="text-sm text-[#f43f5e]">{error}</p>}
+
+              <Button
+                type="submit"
+                className="w-full bg-gradient-to-r from-[#00d4ff] to-[#8b5cf6] text-[#06060c] font-semibold"
+                disabled={isLoading}
+              >
+                {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
+                {isSignup ? "Create Account" : "Sign In"}
+              </Button>
+
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-[#6e6e8a] hover:text-[#e8e8f8]"
+                onClick={() => { setIsSignup(!isSignup); setError(null); }}
+                disabled={isLoading}
+              >
+                {isSignup ? "Already have an account? Sign in" : "Don't have an account? Sign up"}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full border-[#252540] bg-[#16162a] text-[#e8e8f8] hover:bg-[#1e1e38]"
+                onClick={handleGuest}
+                disabled={isLoading}
+              >
+                <UserX className="mr-2 h-4 w-4" />
+                Continue as Guest
+              </Button>
+            </CardContent>
+          </form>
+
+          <div className="py-4 px-6 text-xs text-center text-[#6e6e8a] bg-[#0d0d16] border-t border-[#252540] rounded-b-lg">
+            Nova AI Operating System
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+export default function AuthPage(props: AuthProps) {
+  return <Suspense><Auth {...props} /></Suspense>;
+}
