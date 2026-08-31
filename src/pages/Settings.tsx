@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { LocalAIPanel } from "@/components/local-ai/LocalAIPanel";
+import { GeminiHealthCheck } from "@/components/GeminiHealthCheck";
 import { Eye, EyeOff, Save, Shield, Key, Trash2, Cpu } from "lucide-react";
 
 interface ApiKeyConfig {
@@ -93,6 +94,9 @@ export default function SettingsPage() {
           </div>
           <LocalAIPanel />
         </motion.div>
+
+        {/* Gemini Health Check */}
+        <GeminiHealthCheck apiKey={keys["gemini"]} />
 
         {/* Divider */}
         <div className="border-t border-[#252540]" />
