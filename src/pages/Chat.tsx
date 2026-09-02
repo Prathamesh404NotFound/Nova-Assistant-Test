@@ -30,7 +30,7 @@ import {
 export default function Chat() {
   const [input, setInput] = useState("");
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
-  const [geminiKey] = useState(() => localStorage.getItem("nova_gemini_key") || "");
+  const [geminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "");
   const [showSidebar, setShowSidebar] = useState(false);
   const [aiMode, setAiMode] = useState<AIMode>(getAIMode());
   const scrollRef = useRef<HTMLDivElement>(null);
