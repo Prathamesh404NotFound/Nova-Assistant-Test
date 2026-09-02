@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { addMemory, getMemories, deleteMemory, type RTDBMemory } from "@/lib/rtdb";
+import { EmptyState } from "@/components/EmptyState";
 import { Plus, Brain, User, Folder, Lightbulb, StickyNote, X, Trash2 } from "lucide-react";
 import { logActivity } from "@/lib/local-store";
 
@@ -130,10 +131,14 @@ export default function MemoryPage() {
         </div>
 
         {memories.length === 0 && (
-          <div className="text-center py-20">
-            <Brain className="h-12 w-12 text-[#252540] mx-auto mb-4" />
-            <p className="text-[#6e6e8a] text-sm">No memories yet. Nova will remember what you tell it.</p>
-          </div>
+          <EmptyState
+            icon={Brain}
+            title="No memories stored"
+            description="Nova remembers facts, preferences, and people you tell it about. Add your first memory to get started."
+            actionLabel="Add Memory"
+            onAction={() => setShowNew(true)}
+            hint="Memories persist across sessions and help Nova give you personalized responses."
+          />
         )}
       </div>
     </main>

@@ -8,6 +8,7 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   createTask, getTasks, updateTask, deleteTask, type RTDBTask,
 } from "@/lib/rtdb";
+import { EmptyState } from "@/components/EmptyState";
 import { Plus, CheckCircle2, Circle, Clock, AlertTriangle, Trash2, X } from "lucide-react";
 import { logActivity } from "@/lib/local-store";
 
@@ -153,10 +154,13 @@ export default function Tasks() {
         )}
 
         {tasks.length === 0 && (
-          <div className="text-center py-20">
-            <CheckCircle2 className="h-12 w-12 text-[#252540] mx-auto mb-4" />
-            <p className="text-[#6e6e8a] text-sm">No tasks yet. Create one to get started.</p>
-          </div>
+          <EmptyState
+            icon={CheckCircle2}
+            title="No tasks yet"
+            description="Create your first task to start tracking your work. Tasks sync across your devices and persist in your account."
+            actionLabel="Create Task"
+            onAction={() => setShowNew(true)}
+          />
         )}
       </div>
     </main>
