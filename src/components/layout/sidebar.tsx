@@ -18,6 +18,7 @@ import {
   Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ConfigStatus } from "@/components/ConfigStatus";
 
 const navItems = [
   { to: "/dashboard", icon: MessageSquare, label: "Home" },
@@ -74,11 +75,12 @@ export function Sidebar() {
       </nav>
 
       {/* Status */}
-      <div className="px-4 py-4 border-t border-nova-border">
+      <div className="px-4 py-4 border-t border-nova-border space-y-3">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
           <span className="text-xs text-muted-foreground">Nova Online</span>
         </div>
+        <ConfigStatus />
       </div>
     </aside>
   );
