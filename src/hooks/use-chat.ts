@@ -7,6 +7,8 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { routeMessage, type AIRouterSource } from "@/ai/AIRouter";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
+import { IntentRouter } from "@/services/ai/intent-router";
+import { responseCache } from "@/services/ai/response-cache";
 import { type Intent } from "@/services/ai/types";
 import {
   getConversations,
@@ -147,6 +149,25 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
 
       try {
         const mode = getAIMode();
+
+        // Check cache first
+        const cachedResponse = responseCache.get(content.trim(), mode);
+        if (cachedResponse) {
+          setLastSource("gemini");
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, content: cachedResponse, source: "gemini", latencyMs: 0, isStreaming: false }
+                : m
+            )
+          );
+          setStatus("idle");
+          return;
+        }
+
+        // Classify intent for routing
+        const intentResult = IntentRouter.classify(content.trim());
+
         const response = await routeMessage(content.trim(), conversationHistory, apiKey, {
           mode,
           onChunk: (chunk) => {
@@ -187,6 +208,9 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
               : m
           )
         );
+
+        // Cache the response
+        responseCache.set(content.trim(), mode, response.text, response.source);
 
         // Persist to conversation
         addMessageToConversation(convId, {

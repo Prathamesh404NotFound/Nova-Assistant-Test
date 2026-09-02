@@ -1,8 +1,8 @@
-import { ResponseCache } from "./response-cache";
+import { responseCache } from "./response-cache";
 
 export class LocalConversationEngine {
   static generateResponse(input: string): string {
-    const cached = ResponseCache.getResponse(input);
+    const cached = responseCache.get(input, "local");
     if (cached) return cached;
 
     const lower = input.toLowerCase().trim();
@@ -26,6 +26,8 @@ export class LocalConversationEngine {
       return "I'm here and ready for your command.";
     }
 
-    return "Got it! I'm here whenever you need me.";
+    const response = "Got it! I'm here whenever you need me.";
+    responseCache.set(input, "local", response, "local");
+    return response;
   }
 }

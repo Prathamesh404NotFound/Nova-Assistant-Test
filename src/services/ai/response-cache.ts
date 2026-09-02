@@ -1,43 +1,92 @@
-export function normalizeInput(input: string): string {
-  return input
-    .toLowerCase()
-    .trim()
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()?]/g, "")
-    .replace(/\s+/g, " ");
+/**
+ * Nova AI OS — Response Cache
+ * LRU cache for AI responses to avoid redundant API calls.
+ */
+
+interface CacheEntry {
+  key: string;
+  response: string;
+  source: "local" | "gemini";
+  timestamp: number;
+  hitCount: number;
 }
 
-const STATIC_RESPONSES: Record<string, string[]> = {
-  "hello": ["Hey! How can I help?", "Hello! Ready when you are.", "Hey there!"],
-  "hi": ["Hey! What can I do for you?", "Hi! What are we working on?", "Hello!"],
-  "hey": ["Hey! I'm here.", "Hey! How can I assist you?", "Hey!"],
-  "hey nova": ["Hey! I'm listening.", "Ready! What do you need?", "Nova online. How can I help?"],
-  "hello nova": ["Hello! How can I assist you today?", "Hey! Nova here."],
-  "hi nova": ["Hi! What can I do for you?", "Hey Nova here."],
-  "how are you": ["I'm running perfectly. What are we working on?", "All systems operational! How are you?"],
-  "how are you doing": ["Doing great! Ready for your commands.", "Running smoothly. What's on your mind?"],
-  "who are you": ["I'm Nova, your local-first AI Personal Operating System.", "I'm Nova, your AI Personal OS."],
-  "what is your name": ["My name is Nova.", "I am Nova, your AI Personal Operating System."],
-  "thank you": ["Anytime!", "Glad to help!", "You're very welcome."],
-  "thanks": ["You got it!", "Anytime!", "Happy to help!"],
-  "good morning": ["Good morning. Ready when you are.", "Morning! How can I help start your day?"],
-  "good night": ["Good night! Sleep well.", "Rest well! I'll be here whenever you need me."],
-  "bye": ["Goodbye! Have a great day.", "Catch you later!", "Bye for now!"],
-  "goodbye": ["Goodbye! Let me know if you need anything later.", "Bye for now!"],
-  "are you there": ["Always.", "Right here!", "Online and ready."],
-  "stop": ["Stopped.", "Standing by."],
-  "cancel": ["Cancelled.", "Operation cancelled."],
-  "nice": ["Glad you think so!", "Awesome!"],
-  "cool": ["Glad you like it!", "Sweet!"],
-};
+class ResponseCache {
+  private cache: Map<string, CacheEntry> = new Map();
+  private maxSize: number;
+  private ttlMs: number;
 
-export class ResponseCache {
-  static getResponse(input: string): string | null {
-    const normalized = normalizeInput(input);
-    const matches = STATIC_RESPONSES[normalized];
-    if (matches && matches.length > 0) {
-      const idx = Math.floor(Math.random() * matches.length);
-      return matches[idx];
+  constructor(maxSize = 100, ttlMs = 5 * 60 * 1000) {
+    this.maxSize = maxSize;
+    this.ttlMs = ttlMs;
+  }
+
+  private generateKey(input: string, mode: string): string {
+    return `${mode}:${input.toLowerCase().trim()}`;
+  }
+
+  get(input: string, mode: string): string | null {
+    const key = this.generateKey(input, mode);
+    const entry = this.cache.get(key);
+
+    if (!entry) return null;
+
+    // Check TTL
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return null;
     }
-    return null;
+
+    // Update hit count and move to end (most recently used)
+    entry.hitCount++;
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+
+    return entry.response;
+  }
+
+  set(input: string, mode: string, response: string, source: "local" | "gemini"): void {
+    const key = this.generateKey(input, mode);
+
+    // If at capacity, remove least recently used (first entry)
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+
+    this.cache.set(key, {
+      key,
+      response,
+      source,
+      timestamp: Date.now(),
+      hitCount: 0,
+    });
+  }
+
+  has(input: string, mode: string): boolean {
+    return this.get(input, mode) !== null;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+
+  getStats(): { size: number; hitRate: number } {
+    let totalHits = 0;
+    let totalAccess = 0;
+    this.cache.forEach((entry) => {
+      totalHits += entry.hitCount;
+      totalAccess += entry.hitCount + 1;
+    });
+    return {
+      size: this.cache.size,
+      hitRate: totalAccess > 0 ? totalHits / totalAccess : 0,
+    };
   }
 }
+
+export const responseCache = new ResponseCache();

@@ -5,6 +5,7 @@
 
 import { cn } from "@/lib/utils";
 import { useAIHealth, type AIHealthStatus } from "@/hooks/use-ai-health";
+import { useAIService } from "@/contexts/AIServiceProvider";
 import { Wifi, WifiOff, Loader2 } from "lucide-react";
 
 const statusConfig: Record<
@@ -40,7 +41,8 @@ interface StatusIndicatorProps {
 
 export function StatusIndicator({ detailed, overrideStatus }: StatusIndicatorProps) {
   const health = useAIHealth();
-  const status = overrideStatus || health.status;
+  const { isOnline, localAIModelCached } = useAIService();
+  const status = overrideStatus || (isOnline ? health.status : "offline");
   const config = statusConfig[status];
   const Icon = config.icon;
 

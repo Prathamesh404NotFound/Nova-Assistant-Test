@@ -9,6 +9,7 @@ import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
+import { AIServiceProvider } from "@/contexts/AIServiceProvider";
 import "./index.css";
 
 // Lazy load all pages
@@ -118,6 +119,7 @@ createRoot(document.getElementById("root")!).render(
         <VlyToolbar />
       </ToolbarErrorBoundary>
       <BrowserRouter>
+        <AIServiceProvider>
         <RouteSyncer />
         <CommandPalette />
         <KeyboardShortcuts />
@@ -148,6 +150,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
+        </AIServiceProvider>
       </BrowserRouter>
       <Toaster />
     </RootErrorBoundary>
