@@ -8,76 +8,41 @@ import {
   signOut as firebaseSignOut,
   type User,
 } from "firebase/auth";
-import { auth, googleProvider } from "@/lib/firebase";
-
-/**
- * Check if Firebase is configured with real credentials (not demo defaults).
- */
-function isFirebaseConfigured(): boolean {
-  const key = import.meta.env.VITE_FIREBASE_API_KEY as string;
-  // Demo key from firebase.ts fallback
-  return !!key && key !== "AIzaSyDemoNovaAIOSApiKeyForTesting123" && key.length > 20;
-}
+import { auth, googleProvider, isFirebaseReady } from "@/lib/firebase";
 
 export function useAuth() {
-  const [user, setUser] = useState<User | null>(() => {
-    // Only restore from localStorage if Firebase is actually configured
-    if (!isFirebaseConfigured()) return null;
-    try {
-      const local = localStorage.getItem("nova_local_user");
-      return local ? JSON.parse(local) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // If Firebase isn't configured, skip auth listener
-    if (!isFirebaseConfigured()) {
+    // If Firebase isn't configured, skip auth entirely
+    if (!isFirebaseReady() || !auth) {
       setIsLoading(false);
       return;
     }
 
-    let unsub: () => void = () => {};
-    try {
-      unsub = onAuthStateChanged(
-        auth,
-        (u) => {
-          if (u) {
-            setUser(u);
-            localStorage.setItem(
-              "nova_local_user",
-              JSON.stringify({
-                uid: u.uid,
-                email: u.email,
-                displayName: u.displayName || "User",
-              })
-            );
-          } else {
-            setUser(null);
-            try {
-              localStorage.removeItem("nova_local_user");
-            } catch { /* ignore */ }
-          }
-          setIsLoading(false);
-        },
-        (_err) => {
-          setIsLoading(false);
-        }
-      );
-    } catch {
-      setIsLoading(false);
-    }
+    // onAuthStateChanged handles cross-tab sync automatically
+    // when using browserLocalPersistence (set in firebase.ts)
+    const unsub = onAuthStateChanged(
+      auth,
+      (u) => {
+        setUser(u);
+        setIsLoading(false);
+      },
+      (_err) => {
+        setUser(null);
+        setIsLoading(false);
+      }
+    );
+
     return () => unsub();
   }, []);
 
   const signIn = useCallback(
     async (method: string, formData?: FormData) => {
-      // Block sign-in attempts when Firebase isn't configured
-      if (!isFirebaseConfigured()) {
+      if (!isFirebaseReady() || !auth) {
         throw new Error(
-          "Firebase is not configured. Add your Firebase project credentials to the .env file as VITE_FIREBASE_API_KEY, VITE_FIREBASE_AUTH_DOMAIN, etc."
+          "Firebase is not configured. Add your Firebase project credentials to the .env file."
         );
       }
 
@@ -117,13 +82,14 @@ export function useAuth() {
   );
 
   const signOut = useCallback(async () => {
-    try {
-      localStorage.removeItem("nova_local_user");
-    } catch { /* ignore */ }
     setUser(null);
-    try {
-      await firebaseSignOut(auth);
-    } catch { /* ignore */ }
+    if (auth) {
+      try {
+        await firebaseSignOut(auth);
+      } catch {
+        /* ignore */
+      }
+    }
   }, []);
 
   return {
