@@ -6,7 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { LocalAIPanel } from "@/components/local-ai/LocalAIPanel";
 import { GeminiHealthCheck } from "@/components/GeminiHealthCheck";
-import { Eye, EyeOff, Save, Shield, Key, Trash2, Cpu } from "lucide-react";
+import { ttsRouter, type VoiceSettings } from "@/services/tts/tts-router";
+import { BARK_VOICE_PRESETS } from "@/services/tts/bark-voices";
+import { Eye, EyeOff, Save, Shield, Key, Trash2, Cpu, Volume2, Mic2 } from "lucide-react";
 
 interface ApiKeyConfig {
   id: string;
@@ -38,6 +40,8 @@ export default function SettingsPage() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState(false);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(ttsRouter.getSettings());
+  const [barkStatus, setBarkStatus] = useState(ttsRouter.isBarkAvailable() ? "ready" : "unavailable");
 
   useEffect(() => {
     const loaded: Record<string, string> = {};
@@ -97,6 +101,153 @@ export default function SettingsPage() {
 
         {/* Gemini Health Check */}
         <GeminiHealthCheck apiKey={keys["gemini"]} />
+
+        {/* ── Voice Settings Section ─────────────────────────── */}
+        <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0.7}>
+          <div className="flex items-center gap-2 mb-2">
+            <Volume2 className="h-4 w-4 text-[#00d4ff]" />
+            <h2 className="text-sm font-semibold text-[#e8e8f8] uppercase tracking-wider">
+              Voice Settings
+            </h2>
+            <Badge className={`text-[10px] border-0 ${barkStatus === "ready" ? "bg-[#10b981]/15 text-[#10b981]" : "bg-[#f59e0b]/15 text-[#f59e0b]"}`}>
+              {barkStatus === "ready" ? "● Bark Ready" : "○ Browser Only"}
+            </Badge>
+          </div>
+          <Card className="nova-glass p-4 space-y-4">
+            {/* Engine Selection */}
+            <div>
+              <label className="text-xs text-[#6e6e8a] mb-1 block">Voice Engine</label>
+              <div className="flex gap-2">
+                {(["bark", "browser"] as const).map((engine) => (
+                  <button
+                    key={engine}
+                    onClick={() => {
+                      const updated = { ...voiceSettings, engine };
+                      setVoiceSettings(updated);
+                      ttsRouter.updateSettings(updated);
+                    }}
+                    className={`flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      voiceSettings.engine === engine
+                        ? "bg-[#00d4ff]/20 text-[#00d4ff] border border-[#00d4ff]/30"
+                        : "bg-[#16162a] text-[#6e6e8a] border border-[#252540] hover:text-[#e8e8f8]"
+                    }`}
+                  >
+                    {engine === "bark" ? "☀ Bark (Local)" : "⚙ Browser"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Voice Preset */}
+            <div>
+              <label className="text-xs text-[#6e6e8a] mb-1 block">Voice Preset</label>
+              <select
+                value={voiceSettings.voicePreset}
+                onChange={(e) => {
+                  const updated = { ...voiceSettings, voicePreset: e.target.value };
+                  setVoiceSettings(updated);
+                  ttsRouter.updateSettings(updated);
+                }}
+                className="w-full bg-[#16162a] border border-[#252540] text-[#e8e8f8] text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-[#00d4ff]/40"
+              >
+                {BARK_VOICE_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Volume */}
+            <div>
+              <div className="flex justify-between mb-1">
+                <label className="text-xs text-[#6e6e8a]">Volume</label>
+                <span className="text-xs text-[#00d4ff] font-mono">{Math.round(voiceSettings.volume * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={Math.round(voiceSettings.volume * 100)}
+                onChange={(e) => {
+                  const vol = parseInt(e.target.value) / 100;
+                  const updated = { ...voiceSettings, volume: vol };
+                  setVoiceSettings(updated);
+                  ttsRouter.setVolume(vol);
+                }}
+                className="w-full accent-[#00d4ff] h-1.5"
+              />
+            </div>
+
+            {/* Speed */}
+            <div>
+              <div className="flex justify-between mb-1">
+                <label className="text-xs text-[#6e6e8a]">Speech Speed</label>
+                <span className="text-xs text-[#00d4ff] font-mono">{voiceSettings.speed.toFixed(1)}x</span>
+              </div>
+              <input
+                type="range"
+                min="50"
+                max="200"
+                value={Math.round(voiceSettings.speed * 100)}
+                onChange={(e) => {
+                  const speed = parseInt(e.target.value) / 100;
+                  const updated = { ...voiceSettings, speed };
+                  setVoiceSettings(updated);
+                  ttsRouter.updateSettings(updated);
+                }}
+                className="w-full accent-[#00d4ff] h-1.5"
+              />
+            </div>
+
+            {/* Auto Speak & Interrupt */}
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={voiceSettings.autoSpeak}
+                  onChange={(e) => {
+                    const updated = { ...voiceSettings, autoSpeak: e.target.checked };
+                    setVoiceSettings(updated);
+                    ttsRouter.updateSettings(updated);
+                  }}
+                  className="accent-[#00d4ff] rounded"
+                />
+                <span className="text-xs text-[#6e6e8a]">Auto-speak responses</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={voiceSettings.interruptOnNewInput}
+                  onChange={(e) => {
+                    const updated = { ...voiceSettings, interruptOnNewInput: e.target.checked };
+                    setVoiceSettings(updated);
+                    ttsRouter.updateSettings(updated);
+                  }}
+                  className="accent-[#00d4ff] rounded"
+                />
+                <span className="text-xs text-[#6e6e8a]">Interrupt on new input</span>
+              </label>
+            </div>
+
+            {/* Test Button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-[#00d4ff] hover:bg-[#00d4ff]/10"
+              onClick={async () => {
+                try {
+                  await ttsRouter.speak("Hello! I'm Nova. Your personal AI assistant. Voice is working perfectly.");
+                } catch {
+                  console.warn("TTS test failed");
+                }
+              }}
+            >
+              <Mic2 className="h-3.5 w-3.5 mr-2" />
+              Test Voice
+            </Button>
+          </Card>
+        </motion.div>
 
         {/* Divider */}
         <div className="border-t border-[#252540]" />

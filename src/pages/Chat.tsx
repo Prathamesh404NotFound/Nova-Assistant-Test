@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NovaAvatar, type AvatarState } from "@/components/nova/avatar";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
-import { useIndicTTS } from "@/hooks/use-indic-tts";
+import { ttsRouter } from "@/services/tts/tts-router";
 import { useChat } from "@/hooks/use-chat";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
@@ -45,11 +45,28 @@ export default function Chat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
 
-  const { state: ttsState, speak: indicSpeak, stop: stopTTS } = useIndicTTS({
-    onPlay: () => setAvatarState("speaking"),
-    onEnd: () => setAvatarState("idle"),
-  });
-  const isSpeaking = ttsState.isPlaying;
+  // Initialize TTS router with callbacks
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  useEffect(() => {
+    ttsRouter.setCallbacks({
+      onPlay: () => setIsSpeaking(true),
+      onEnd: () => setIsSpeaking(false),
+    });
+    ttsRouter.initialize();
+  }, []);
+
+  const indicSpeak = useCallback(async (text: string) => {
+    try {
+      await ttsRouter.speak(text);
+    } catch (err) {
+      console.warn("[TTS] Speak failed:", err);
+    }
+  }, []);
+
+  const stopTTS = useCallback(() => {
+    ttsRouter.stop();
+    setIsSpeaking(false);
+  }, []);
 
   const handleNavigate = useCallback(
     (path: string) => {
