@@ -18,7 +18,9 @@ export type ToolCategory =
   | "notifications"
   | "plugins"
   | "automation"
-  | "system";
+  | "system"
+  | "desktop"
+  | "perception";
 
 // ─── Risk & Confirmation ────────────────────────────────────────────────────
 

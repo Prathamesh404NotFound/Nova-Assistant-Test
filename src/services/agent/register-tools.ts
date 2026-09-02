@@ -9,6 +9,8 @@ import type { NovaTool, ToolContext, ToolResult } from "./types";
 import { memoryService } from "../memory/MemoryService";
 import { calendarService } from "../calendar/CalendarService";
 import { taskService } from "../tasks/TaskService";
+import { computerService } from "../computer/ComputerService";
+import { perceptionService } from "../perception/PerceptionService";
 import {
   logActivity,
   addEmailDraft,
@@ -553,6 +555,506 @@ const navigationGoTool: NovaTool = {
   },
 };
 
+// ─── Desktop / Computer Control Tools ───────────────────────────────────────
+
+const desktopClickTool: NovaTool = {
+  name: "desktop.click",
+  description: "Click at a screen coordinate",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      x: { type: "number", description: "X coordinate", required: true },
+      y: { type: "number", description: "Y coordinate", required: true },
+      button: { type: "string", description: "Mouse button: left, right, middle (default: left)" },
+    },
+    required: ["x", "y"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.click(args.x as number, args.y as number, (args.button as "left" | "right" | "middle") || "left");
+    return result.verified
+      ? ok("desktop.click", result, `Clicked at (${args.x}, ${args.y})`)
+      : fail("desktop.click", "ACTION_FAILED", result.error || "Click failed");
+  },
+};
+
+const desktopDoubleClickTool: NovaTool = {
+  name: "desktop.doubleClick",
+  description: "Double-click at a screen coordinate",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      x: { type: "number", description: "X coordinate", required: true },
+      y: { type: "number", description: "Y coordinate", required: true },
+    },
+    required: ["x", "y"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.doubleClick(args.x as number, args.y as number);
+    return result.verified
+      ? ok("desktop.doubleClick", result, `Double-clicked at (${args.x}, ${args.y})`)
+      : fail("desktop.doubleClick", "ACTION_FAILED", result.error || "Double-click failed");
+  },
+};
+
+const desktopRightClickTool: NovaTool = {
+  name: "desktop.rightClick",
+  description: "Right-click at a screen coordinate",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      x: { type: "number", description: "X coordinate", required: true },
+      y: { type: "number", description: "Y coordinate", required: true },
+    },
+    required: ["x", "y"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.rightClick(args.x as number, args.y as number);
+    return result.verified
+      ? ok("desktop.rightClick", result, `Right-clicked at (${args.x}, ${args.y})`)
+      : fail("desktop.rightClick", "ACTION_FAILED", result.error || "Right-click failed");
+  },
+};
+
+const desktopTypeTool: NovaTool = {
+  name: "desktop.type",
+  description: "Type text into the currently focused input",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      text: { type: "string", description: "Text to type", required: true },
+      delayMs: { type: "number", description: "Delay between characters in ms" },
+    },
+    required: ["text"],
+  },
+  riskLevel: "low",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.typeText(args.text as string, (args.delayMs as number) || 20);
+    return result.verified
+      ? ok("desktop.type", result, `Typed ${(args.text as string).length} characters`)
+      : fail("desktop.type", "ACTION_FAILED", result.error || "Typing failed");
+  },
+};
+
+const desktopPressTool: NovaTool = {
+  name: "desktop.press",
+  description: "Press a keyboard key",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      key: { type: "string", description: "Key name (e.g., Enter, Tab, Escape, Backspace)", required: true },
+      modifiers: { type: "string", description: "Comma-separated modifiers (e.g., ctrl,shift)" },
+    },
+    required: ["key"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const mods = args.modifiers ? (args.modifiers as string).split(",").map((s) => s.trim()) : undefined;
+    const result = await computerService.keyPress(args.key as string, mods);
+    return result.verified
+      ? ok("desktop.press", result, `Pressed ${args.key}`)
+      : fail("desktop.press", "ACTION_FAILED", result.error || "Key press failed");
+  },
+};
+
+const desktopHotkeyTool: NovaTool = {
+  name: "desktop.hotkey",
+  description: "Press a keyboard shortcut (multiple keys simultaneously)",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      keys: { type: "string", description: "Comma-separated keys (e.g., ctrl,c or alt,tab)", required: true },
+    },
+    required: ["keys"],
+  },
+  riskLevel: "low",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const keys = (args.keys as string).split(",").map((s) => s.trim().toLowerCase());
+    const result = await computerService.hotkey(keys);
+    return result.verified
+      ? ok("desktop.hotkey", result, `Pressed hotkey: ${keys.join("+")}`)
+      : fail("desktop.hotkey", "ACTION_FAILED", result.error || "Hotkey failed");
+  },
+};
+
+const desktopScrollTool: NovaTool = {
+  name: "desktop.scroll",
+  description: "Scroll the screen",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      x: { type: "number", description: "X coordinate to scroll at" },
+      y: { type: "number", description: "Y coordinate to scroll at" },
+      deltaY: { type: "number", description: "Scroll amount (positive = down, negative = up)", required: true },
+    },
+    required: ["deltaY"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.scroll(args.x as number || 0, args.y as number || 0, args.deltaY as number);
+    return result.verified
+      ? ok("desktop.scroll", result, `Scrolled ${args.deltaY as number > 0 ? "down" : "up"}`)
+      : fail("desktop.scroll", "ACTION_FAILED", result.error || "Scroll failed");
+  },
+};
+
+const desktopMoveTool: NovaTool = {
+  name: "desktop.move",
+  description: "Move the mouse cursor to a coordinate",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      x: { type: "number", description: "X coordinate", required: true },
+      y: { type: "number", description: "Y coordinate", required: true },
+    },
+    required: ["x", "y"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.moveMouse(args.x as number, args.y as number);
+    return result.verified
+      ? ok("desktop.move", result, `Moved mouse to (${args.x}, ${args.y})`)
+      : fail("desktop.move", "ACTION_FAILED", result.error || "Move failed");
+  },
+};
+
+const desktopCopyTool: NovaTool = {
+  name: "desktop.copy",
+  description: "Copy text to clipboard",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      text: { type: "string", description: "Text to copy to clipboard", required: true },
+    },
+    required: ["text"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.clipboardWrite(args.text as string);
+    return result.verified
+      ? ok("desktop.copy", result, `Copied ${(args.text as string).length} characters`)
+      : fail("desktop.copy", "ACTION_FAILED", result.error || "Copy failed");
+  },
+};
+
+const desktopPasteTool: NovaTool = {
+  name: "desktop.paste",
+  description: "Paste from clipboard (types clipboard content)",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      text: { type: "string", description: "Text to paste (if empty, reads from clipboard)" },
+    },
+  },
+  riskLevel: "low",
+  confirmationRequired: true,
+  execute: async (args) => {
+    let text = args.text as string;
+    if (!text) {
+      const clip = await computerService.clipboardRead();
+      text = clip.text || "";
+    }
+    if (!text) return fail("desktop.paste", "EMPTY", "Clipboard is empty");
+    const result = await computerService.typeText(text, 10);
+    return result.verified
+      ? ok("desktop.paste", result, `Pasted ${text.length} characters`)
+      : fail("desktop.paste", "ACTION_FAILED", result.error || "Paste failed");
+  },
+};
+
+const desktopListWindowsTool: NovaTool = {
+  name: "desktop.listWindows",
+  description: "List all open windows",
+  category: "desktop",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const windows = await computerService.listWindows();
+    return ok("desktop.listWindows", windows, `Found ${windows.length} windows`);
+  },
+};
+
+const desktopFocusWindowTool: NovaTool = {
+  name: "desktop.focusWindow",
+  description: "Focus a specific window by application name",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      application: { type: "string", description: "Application name to focus", required: true },
+    },
+    required: ["application"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.focusWindow(undefined, args.application as string);
+    return result.verified
+      ? ok("desktop.focusWindow", result, `Focused ${args.application}`)
+      : fail("desktop.focusWindow", "WINDOW_NOT_FOUND", result.error || `Could not find window: ${args.application}`);
+  },
+};
+
+const desktopLaunchAppTool: NovaTool = {
+  name: "desktop.launchApp",
+  description: "Launch an application",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      application: { type: "string", description: "Application name or path to launch", required: true },
+    },
+    required: ["application"],
+  },
+  riskLevel: "low",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.launchApp(args.application as string);
+    return result.verified
+      ? ok("desktop.launchApp", result, `Launched ${args.application}`)
+      : fail("desktop.launchApp", "APP_NOT_FOUND", result.error || `Could not launch: ${args.application}`);
+  },
+};
+
+const desktopCloseAppTool: NovaTool = {
+  name: "desktop.closeApp",
+  description: "Close an application",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      application: { type: "string", description: "Application name to close", required: true },
+    },
+    required: ["application"],
+  },
+  riskLevel: "medium",
+  confirmationRequired: true,
+  execute: async (args) => {
+    const result = await computerService.closeApp(args.application as string);
+    return result.verified
+      ? ok("desktop.closeApp", result, `Closed ${args.application}`)
+      : fail("desktop.closeApp", "ACTION_FAILED", result.error || `Could not close: ${args.application}`);
+  },
+};
+
+const desktopGetActiveWindowTool: NovaTool = {
+  name: "desktop.getActiveWindow",
+  description: "Get information about the currently active window",
+  category: "desktop",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const window = await computerService.getActiveWindow();
+    if (!window) return ok("desktop.getActiveWindow", null, "No active window detected");
+    return ok("desktop.getActiveWindow", window, `Active: ${window.application} - ${window.title}`);
+  },
+};
+
+const desktopMinimizeTool: NovaTool = {
+  name: "desktop.minimizeWindow",
+  description: "Minimize a window",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      application: { type: "string", description: "Application name", required: true },
+    },
+    required: ["application"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const windows = await computerService.listWindows();
+    const win = windows.find((w) => w.application.toLowerCase().includes((args.application as string).toLowerCase()));
+    if (!win) return fail("desktop.minimizeWindow", "WINDOW_NOT_FOUND", `No window found for ${args.application}`);
+    const result = await computerService.minimizeWindow(win.id);
+    return result.verified
+      ? ok("desktop.minimizeWindow", result, `Minimized ${args.application}`)
+      : fail("desktop.minimizeWindow", "ACTION_FAILED", result.error || "Minimize failed");
+  },
+};
+
+const desktopMaximizeTool: NovaTool = {
+  name: "desktop.maximizeWindow",
+  description: "Maximize a window",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      application: { type: "string", description: "Application name", required: true },
+    },
+    required: ["application"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const windows = await computerService.listWindows();
+    const win = windows.find((w) => w.application.toLowerCase().includes((args.application as string).toLowerCase()));
+    if (!win) return fail("desktop.maximizeWindow", "WINDOW_NOT_FOUND", `No window found for ${args.application}`);
+    const result = await computerService.maximizeWindow(win.id);
+    return result.verified
+      ? ok("desktop.maximizeWindow", result, `Maximized ${args.application}`)
+      : fail("desktop.maximizeWindow", "ACTION_FAILED", result.error || "Maximize failed");
+  },
+};
+
+// ─── Perception / Screen Tools ──────────────────────────────────────────────
+
+const screenCaptureTool: NovaTool = {
+  name: "screen.capture",
+  description: "Take a screenshot of the screen",
+  category: "perception",
+  inputSchema: {
+    properties: {
+      region: { type: "string", description: "Optional region as JSON {x,y,width,height}" },
+    },
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const region = args.region ? JSON.parse(args.region as string) : undefined;
+    const obs = await perceptionService.captureScreen(region);
+    if (obs.error) return fail("screen.capture", "SCREEN_ACCESS_DENIED", obs.error);
+    return ok("screen.capture", { hasScreenshot: !!obs.screenshot }, "Screenshot captured");
+  },
+};
+
+const screenCurrentTool: NovaTool = {
+  name: "screen.current",
+  description: "Get the current active window information",
+  category: "perception",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const obs = await perceptionService.getActiveWindow();
+    const info = obs.activeApplication
+      ? `${obs.activeApplication}: ${obs.windowTitle || "unknown"}`
+      : "No active window detected";
+    return ok("screen.current", obs, info);
+  },
+};
+
+const screenReadTool: NovaTool = {
+  name: "screen.read",
+  description: "Extract text from the screen using OCR",
+  category: "perception",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const result = await perceptionService.extractText();
+    if (!result.text) return ok("screen.read", result, "No text detected on screen");
+    return ok("screen.read", result, `Extracted ${result.text.length} characters (${Math.round(result.confidence * 100)}% confidence)`);
+  },
+};
+
+const screenDescribeTool: NovaTool = {
+  name: "screen.describe",
+  description: "Describe what is currently shown on screen using AI vision",
+  category: "perception",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const result = await perceptionService.describeScreen();
+    return ok("screen.describe", result, result.description);
+  },
+};
+
+const screenFindTextTool: NovaTool = {
+  name: "screen.findText",
+  description: "Find specific text on the screen",
+  category: "perception",
+  inputSchema: {
+    properties: {
+      text: { type: "string", description: "Text to find on screen", required: true },
+    },
+    required: ["text"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await perceptionService.findTextOnScreen(args.text as string);
+    if (result.found) return ok("screen.findText", result, `Found "${args.text}" at (${result.location?.x}, ${result.location?.y})`);
+    return ok("screen.findText", result, `Text "${args.text}" not found on screen`);
+  },
+};
+
+const screenAnalyzeTool: NovaTool = {
+  name: "screen.analyze",
+  description: "Analyze the screen content in detail (OCR + vision)",
+  category: "perception",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const [ocr, vision] = await Promise.all([
+      perceptionService.extractText(),
+      perceptionService.describeScreen(),
+    ]);
+    return ok("screen.analyze", { ocr, vision }, `${vision.description}\n\nDetected text: ${ocr.text.slice(0, 200)}`);
+  },
+};
+
+// ─── Clipboard Tools ────────────────────────────────────────────────────────
+
+const clipboardReadTool: NovaTool = {
+  name: "clipboard.read",
+  description: "Read the current clipboard content",
+  category: "desktop",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const content = await computerService.clipboardRead();
+    return ok("clipboard.read", content, content.text ? `Clipboard: ${content.text.slice(0, 100)}` : "Clipboard is empty");
+  },
+};
+
+const clipboardWriteTool: NovaTool = {
+  name: "clipboard.write",
+  description: "Write text to the clipboard",
+  category: "desktop",
+  inputSchema: {
+    properties: {
+      text: { type: "string", description: "Text to write to clipboard", required: true },
+    },
+    required: ["text"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const result = await computerService.clipboardWrite(args.text as string);
+    return result.verified
+      ? ok("clipboard.write", result, `Copied ${(args.text as string).length} characters to clipboard`)
+      : fail("clipboard.write", "ACTION_FAILED", result.error || "Clipboard write failed");
+  },
+};
+
+const clipboardClearTool: NovaTool = {
+  name: "clipboard.clear",
+  description: "Clear the clipboard",
+  category: "desktop",
+  inputSchema: { properties: {} },
+  riskLevel: "low",
+  confirmationRequired: true,
+  execute: async () => {
+    const result = await computerService.clipboardClear();
+    return result.verified
+      ? ok("clipboard.clear", result, "Clipboard cleared")
+      : fail("clipboard.clear", "ACTION_FAILED", result.error || "Clipboard clear failed");
+  },
+};
+
 // ─── Registration ────────────────────────────────────────────────────────────
 
 let registered = false;
@@ -599,6 +1101,38 @@ export function registerAllTools(): void {
   toolRegistry.register(deviceListTool);
   toolRegistry.register(deviceToggleTool);
   toolRegistry.register(deviceAdjustTool);
+
+  // Desktop / Computer Control
+  toolRegistry.register(desktopClickTool);
+  toolRegistry.register(desktopDoubleClickTool);
+  toolRegistry.register(desktopRightClickTool);
+  toolRegistry.register(desktopTypeTool);
+  toolRegistry.register(desktopPressTool);
+  toolRegistry.register(desktopHotkeyTool);
+  toolRegistry.register(desktopScrollTool);
+  toolRegistry.register(desktopMoveTool);
+  toolRegistry.register(desktopCopyTool);
+  toolRegistry.register(desktopPasteTool);
+  toolRegistry.register(desktopListWindowsTool);
+  toolRegistry.register(desktopFocusWindowTool);
+  toolRegistry.register(desktopLaunchAppTool);
+  toolRegistry.register(desktopCloseAppTool);
+  toolRegistry.register(desktopGetActiveWindowTool);
+  toolRegistry.register(desktopMinimizeTool);
+  toolRegistry.register(desktopMaximizeTool);
+
+  // Perception / Screen
+  toolRegistry.register(screenCaptureTool);
+  toolRegistry.register(screenCurrentTool);
+  toolRegistry.register(screenReadTool);
+  toolRegistry.register(screenDescribeTool);
+  toolRegistry.register(screenFindTextTool);
+  toolRegistry.register(screenAnalyzeTool);
+
+  // Clipboard
+  toolRegistry.register(clipboardReadTool);
+  toolRegistry.register(clipboardWriteTool);
+  toolRegistry.register(clipboardClearTool);
 
   console.log(`[ToolRegistry] Registered ${toolRegistry.list().length} tools`);
 }
