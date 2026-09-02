@@ -25,17 +25,22 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 let verifiedModel: string | null = null;
 
 // ── Key Resolution ──────────────────────────────────────────────
+// Resolution order: override > env var > localStorage fallback
 function resolveApiKey(overrideKey?: string): string {
-  return (
-    overrideKey ||
-    (typeof localStorage !== "undefined"
-      ? localStorage.getItem("nova_gemini_key") || ""
-      : "") ||
-    (import.meta.env.VITE_GEMINI_API_KEY as string) ||
-    (import.meta.env.GEMINI_API_KEY as string) ||
-    (typeof process !== "undefined" ? process.env?.GEMINI_API_KEY : "") ||
-    ""
-  );
+  // 1. Explicit override (from caller)
+  if (overrideKey && overrideKey.length > 10) return overrideKey;
+
+  // 2. Environment variable (primary source)
+  const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
+  if (envKey && envKey.length > 10) return envKey;
+
+  // 3. localStorage fallback (for Settings page saves)
+  if (typeof localStorage !== "undefined") {
+    const stored = localStorage.getItem("nova_gemini_key") || "";
+    if (stored && stored.length > 10) return stored;
+  }
+
+  return "";
 }
 
 // ── Model Discovery ─────────────────────────────────────────────
