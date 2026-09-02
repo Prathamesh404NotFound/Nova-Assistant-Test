@@ -13,6 +13,7 @@ import { toolRegistry } from "./ToolRegistry";
 import { toolExecutor } from "./ToolExecutor";
 import { registerAllTools } from "./register-tools";
 import { callGemini } from "@/lib/gemini";
+import { missionManager } from "@/services/mission";
 import type {
   AgentInput,
   AgentResult,
@@ -310,26 +311,34 @@ class AgentOrchestratorImpl {
       source: input.source,
     };
 
-    // 1. Classify intent
+    // 1. Check if this should become a mission
+    if (missionManager.shouldCreateMission(input.text)) {
+      const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "";
+      const mission = await missionManager.create(input.text, context, input.source, geminiKey);
+      return {
+        response: `Mission started: "${input.text.slice(0, 60)}"\nPlan: ${mission.steps.length} steps identified.\n${mission.steps.map((s, i) => `${i + 1}. ${s.description}`).join("\n")}`,
+        actionsExecuted: [],
+        route: { route: "AI_TOOL", confidence: 0.9 },
+        durationMs: Date.now() - start,
+      };
+    }
+
+    // 2. Classify intent
     const decision = this.classifyIntent(input.text);
 
-    // 2. Route based on decision
+    // 3. Route based on decision
     switch (decision.route) {
       case "LOCAL_ACTION": {
-        // Fast path: execute tool directly
         return this.executeLocalAction(decision, context, start);
       }
 
       case "AI_TOOL": {
-        // Medium path: structured AI tool planning
-        // For now, fall through to AI model for complex requests
         return this.routeToAI(input, context, start);
       }
 
       case "CHAT": {
-        // Pure conversation: route to AI model
         return {
-          response: "", // Let the existing AI handle it
+          response: "",
           actionsExecuted: [],
           route: decision,
           durationMs: Date.now() - start,
