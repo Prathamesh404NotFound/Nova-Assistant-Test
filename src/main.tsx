@@ -40,6 +40,9 @@ const ObservabilityDashboard = lazy(() => import("./pages/ObservabilityPage"));
 const PersonalizationSettings = lazy(() => import("./pages/PersonalizationPage"));
 const ImportExportPage = lazy(() => import("./pages/ImportExportPage"));
 const CalendarIntelligencePage = lazy(() => import("./pages/CalendarIntelligence"));
+const AdminTeamPage = lazy(() => import("./pages/AdminTeamPage"));
+const VoiceExperiencePage = lazy(() => import("./pages/VoiceExperiencePage"));
+const BrowserResearchPage = lazy(() => import("./pages/BrowserResearchPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
@@ -160,6 +163,9 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/personalization" element={<ProtectedRoute><PersonalizationSettings /></ProtectedRoute>} />
             <Route path="/import-export" element={<ProtectedRoute><ImportExportPage /></ProtectedRoute>} />
             <Route path="/calendar-intel" element={<ProtectedRoute><CalendarIntelligencePage /></ProtectedRoute>} />
+            <Route path="/admin-team" element={<ProtectedRoute><AdminTeamPage /></ProtectedRoute>} />
+            <Route path="/voice-experience" element={<ProtectedRoute><VoiceExperiencePage /></ProtectedRoute>} />
+            <Route path="/browser-research" element={<ProtectedRoute><BrowserResearchPage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

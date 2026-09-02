@@ -28,6 +28,9 @@ import {
   UserCog,
   Download,
   CalendarRange,
+  Users,
+  Mic2,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
@@ -59,6 +62,9 @@ export function Sidebar() {
     { to: "/observability", icon: BarChart3, label: "Observability" },
     { to: "/import-export", icon: Download, label: "Import / Export" },
     { to: "/calendar-intel", icon: CalendarRange, label: "Calendar Intel" },
+    { to: "/voice-experience", icon: Mic2, label: "Voice Experience" },
+    { to: "/browser-research", icon: BookOpen, label: "Research Mode" },
+    { to: "/admin-team", icon: Users, label: "Admin & Team" },
     { to: "/security", icon: Shield, label: "Security" },
     { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },
     { to: "/personalization", icon: UserCog, label: "Personalization" },
