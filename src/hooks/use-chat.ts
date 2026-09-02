@@ -276,6 +276,19 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
   }, []);
 
   /**
+   * Retry the last failed message.
+   */
+  const retryLastMessage = useCallback(() => {
+    if (status !== "error" || messages.length < 2) return;
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUserMsg) return;
+    // Remove the error placeholder
+    setMessages((prev) => prev.filter((m) => !m.content.startsWith("⚠️")));
+    setError(null);
+    sendMessage(lastUserMsg.content);
+  }, [status, messages, sendMessage]);
+
+  /**
    * Clear all messages and start fresh.
    */
   const clearMessages = useCallback(() => {
@@ -303,22 +316,6 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
     },
     [activeConvId]
   );
-
-  /**
-   * Retry the last failed message.
-   */
-  const retryLastMessage = useCallback(() => {
-    if (status !== "error" || messages.length < 2) return;
-
-    // Find the last user message
-    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-    if (lastUserMsg) {
-      // Remove the error response
-      setMessages((prev) => prev.slice(0, -1));
-      // Resend
-      sendMessage(lastUserMsg.content);
-    }
-  }, [status, messages, sendMessage]);
 
   return {
     // State
