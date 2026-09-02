@@ -10,6 +10,8 @@ import { validateEnvironment } from "@/lib/env-validator";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { AIServiceProvider } from "@/contexts/AIServiceProvider";
+import { WakeWordProvider } from "@/contexts/WakeWordProvider";
+import { WakeWordActivator } from "@/components/WakeWordActivator";
 import "./index.css";
 
 // Lazy load all pages
@@ -134,7 +136,9 @@ createRoot(document.getElementById("root")!).render(
       </ToolbarErrorBoundary>
       <BrowserRouter>
         <AIServiceProvider>
+        <WakeWordProvider>
         <RouteSyncer />
+        <WakeWordActivator />
         <CommandPalette />
         <KeyboardShortcuts />
         <Suspense fallback={<RouteLoading />}>
@@ -178,6 +182,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
+        </WakeWordProvider>
         </AIServiceProvider>
       </BrowserRouter>
       <Toaster />

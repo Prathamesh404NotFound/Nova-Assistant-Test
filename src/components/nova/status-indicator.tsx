@@ -6,7 +6,8 @@
 import { cn } from "@/lib/utils";
 import { useAIHealth, type AIHealthStatus } from "@/hooks/use-ai-health";
 import { useAIService } from "@/contexts/AIServiceProvider";
-import { Wifi, WifiOff, Loader2 } from "lucide-react";
+import { useWakeWordContext } from "@/contexts/WakeWordProvider";
+import { Wifi, WifiOff, Loader2, Mic, MicOff } from "lucide-react";
 
 const statusConfig: Record<
   AIHealthStatus,
@@ -42,6 +43,7 @@ interface StatusIndicatorProps {
 export function StatusIndicator({ detailed, overrideStatus }: StatusIndicatorProps) {
   const health = useAIHealth();
   const { isOnline, localAIModelCached } = useAIService();
+  const { isListening: wakeWordActive, start: startWake, stop: stopWake, isSupported: wakeSupported } = useWakeWordContext();
   const status = overrideStatus || (isOnline ? health.status : "offline");
   const config = statusConfig[status];
   const Icon = config.icon;
@@ -57,6 +59,27 @@ export function StatusIndicator({ detailed, overrideStatus }: StatusIndicatorPro
       />
       <Icon className="h-3 w-3" />
       <span>{config.label}</span>
+
+      {/* Wake word listening indicator */}
+      {wakeSupported && (
+        <button
+          onClick={wakeWordActive ? stopWake : startWake}
+          className={cn(
+            "flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] transition-colors",
+            wakeWordActive
+              ? "bg-[#00d4ff]/20 text-[#00d4ff]"
+              : "text-[#6e6e8a] hover:text-[#c8d6e5]"
+          )}
+          aria-label={wakeWordActive ? "Stop wake word listening" : "Start wake word listening"}
+        >
+          {wakeWordActive ? (
+            <Mic className="h-3 w-3 animate-pulse" />
+          ) : (
+            <MicOff className="h-3 w-3" />
+          )}
+          {wakeWordActive ? "Listening" : "Muted"}
+        </button>
+      )}
 
       {detailed && (
         <div className="ml-2 flex items-center gap-3 text-[10px] text-[#6e6e8a]">
