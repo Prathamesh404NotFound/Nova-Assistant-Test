@@ -46,6 +46,7 @@ const BrowserResearchPage = lazy(() => import("./pages/BrowserResearchPage"));
 const CodingWorkspacePage = lazy(() => import("./pages/CodingWorkspace"));
 const SmartHomeScenesPage = lazy(() => import("./pages/SmartHomeScenes"));
 const AutomationBuilderPage = lazy(() => import("./pages/AutomationBuilder"));
+const AgentMarketplacePage = lazy(() => import("./pages/AgentMarketplace"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
@@ -172,6 +173,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/coding-workspace" element={<ProtectedRoute><CodingWorkspacePage /></ProtectedRoute>} />
             <Route path="/smart-home-scenes" element={<ProtectedRoute><SmartHomeScenesPage /></ProtectedRoute>} />
             <Route path="/automation-builder" element={<ProtectedRoute><AutomationBuilderPage /></ProtectedRoute>} />
+            <Route path="/marketplace" element={<ProtectedRoute><AgentMarketplacePage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
