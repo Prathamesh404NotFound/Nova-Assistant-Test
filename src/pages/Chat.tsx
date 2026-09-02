@@ -12,6 +12,7 @@ import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
 import ReactMarkdown from "react-markdown";
 import { Collaboration } from "@/components/Collaboration";
+import { ExportChat } from "@/components/ExportChat";
 import {
   Send,
   Mic,
@@ -204,6 +205,7 @@ export default function Chat() {
         </div>
         <div className="flex items-center gap-2">
           <Collaboration conversationId={activeConvId || undefined} messages={messages} />
+          <ExportChat messages={messages} />
           {isStreaming && (
             <Button
               variant="ghost"

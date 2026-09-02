@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
 import { CommandPalette } from "@/components/CommandPalette";
+import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import "./index.css";
 
 // Lazy load all pages
@@ -119,6 +120,7 @@ createRoot(document.getElementById("root")!).render(
       <BrowserRouter>
         <RouteSyncer />
         <CommandPalette />
+        <KeyboardShortcuts />
         <Suspense fallback={<RouteLoading />}>
           <Routes>
             <Route path="/" element={<Landing />} />
