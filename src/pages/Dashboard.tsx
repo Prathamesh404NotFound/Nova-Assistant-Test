@@ -195,7 +195,7 @@ export default function Dashboard() {
             <h1 className="text-2xl font-bold tracking-tight mt-1">Nova Command Center</h1>
           </div>
           <div className="flex items-center gap-3">
-            <StatusIndicator state={avatarState} />
+            <StatusIndicator />
             <Button
               variant="ghost"
               size="sm"
