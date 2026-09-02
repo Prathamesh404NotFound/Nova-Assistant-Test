@@ -1,4 +1,5 @@
 import { NavLink } from "react-router";
+import { useState, useEffect } from "react";
 import {
   MessageSquare,
   CheckSquare,
@@ -18,6 +19,10 @@ import {
   Puzzle,
   Mic,
   LayoutDashboard,
+  GitBranch,
+  Search,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
@@ -41,8 +46,10 @@ export function Sidebar() {
     { to: "/coding", icon: Code, label: "Coding" },
     { to: "/smart-home", icon: Home, label: "Smart Home" },
     { to: "/files", icon: Files, label: "Files", badge: counts.files || undefined },
-    { to: "/automations", icon: Zap, label: "Workflows", badge: counts.automations || undefined },
+    { to: "/automations", icon: Zap, label: "Automations", badge: counts.automations || undefined },
+    { to: "/workflows", icon: GitBranch, label: "Workflow Planner" },
     { to: "/activity", icon: Activity, label: "Activity", badge: counts.activities || undefined },
+    { to: "/memory-search", icon: Search, label: "Memory Search" },
     { to: "/security", icon: Shield, label: "Security" },
     { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },
     { to: "/settings", icon: Settings, label: "Settings" },
@@ -98,6 +105,9 @@ export function Sidebar() {
           </NavLink>
         ))}
       </nav>
+
+      {/* Offline Queue Status */}
+      <OfflineQueueStatus />
 
       {/* Voice Status */}
       <div className="px-4 py-3 border-t border-nova-border">
@@ -156,5 +166,53 @@ export function Sidebar() {
         <ConfigStatus />
       </div>
     </aside>
+  );
+}
+
+function OfflineQueueStatus() {
+  const [queueCount, setQueueCount] = useState(0);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const check = () => {
+      try {
+        const queue = JSON.parse(localStorage.getItem("nova_offline_queue") || "[]");
+        const queued = queue.filter((a: { status: string }) => a.status === "queued");
+        setQueueCount(queued.length);
+      } catch { /* ignore */ }
+    };
+    check();
+    const interval = setInterval(check, 5000);
+    window.addEventListener("online", () => setIsOnline(true));
+    window.addEventListener("offline", () => setIsOnline(false));
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("online", () => setIsOnline(true));
+      window.removeEventListener("offline", () => setIsOnline(false));
+    };
+  }, []);
+
+  if (isOnline && queueCount === 0) return null;
+
+  return (
+    <div className="mx-3 mb-2 px-3 py-1.5 rounded-lg bg-[#0f2035]/80 border border-[#1a2f4a]">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          {isOnline ? (
+            <Wifi className="w-3 h-3 text-[#10b981]" aria-hidden="true" />
+          ) : (
+            <WifiOff className="w-3 h-3 text-[#f59e0b]" aria-hidden="true" />
+          )}
+          <span className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">
+            {isOnline ? "Online" : "Offline"}
+          </span>
+        </div>
+        {queueCount > 0 && (
+          <span className="text-[10px] bg-[#f59e0b]/15 text-[#f59e0b] px-1.5 py-0.5 rounded-full font-mono">
+            {queueCount} queued
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
