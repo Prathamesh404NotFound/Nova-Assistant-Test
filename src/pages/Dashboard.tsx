@@ -8,10 +8,11 @@ import { StatusIndicator } from "@/components/nova/status-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { useWakeWord } from "@/hooks/use-wake-word";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
-import { routeMessage } from "@/ai/AIRouter";
+import { agentOrchestrator } from "@/services/agent/AgentOrchestrator";
+import { ttsRouter } from "@/services/tts/tts-router";
 import { getAIMode } from "@/ai/local/LocalAISettings";
-import { localAIService } from "@/ai/local/LocalAIService";
 import { DownloadModal } from "@/components/local-ai/DownloadModal";
+import { localAIService } from "@/ai/local/LocalAIService";
 import { getTasks } from "@/lib/rtdb";
 import { getMemories } from "@/lib/rtdb";
 import { getConversations } from "@/lib/local-store";
@@ -34,11 +35,8 @@ import {
   Mail,
   Globe,
   Code,
-  Activity,
-  Shield,
   Bot,
   Clock,
-  AlertTriangle,
 } from "lucide-react";
 
 const fadeUp = {
@@ -58,8 +56,6 @@ const quickCommands = [
   { label: "Browse the web", icon: Globe, action: "browser" },
   { label: "Open coding sandbox", icon: Code, action: "coding" },
 ];
-
-
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -86,38 +82,6 @@ function getCurrentDate(): string {
     month: "long",
     day: "numeric",
   });
-}
-
-function CircularGauge({ value, label, color }: { value: number; label: string; color: string }) {
-  const radius = 36;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (value / 100) * circumference;
-
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative w-20 h-20">
-        <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r={radius} fill="none" stroke="rgba(26, 47, 74, 0.5)" strokeWidth="5" />
-          <circle
-            cx="40"
-            cy="40"
-            r={radius}
-            fill="none"
-            stroke={color}
-            strokeWidth="5"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            style={{ filter: `drop-shadow(0 0 6px ${color}40)` }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-sm font-bold font-mono" style={{ color }}>{value}%</span>
-        </div>
-      </div>
-      <span className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">{label}</span>
-    </div>
-  );
 }
 
 export default function Dashboard() {
@@ -162,6 +126,7 @@ export default function Dashboard() {
     localAIService.isCached().then(setLocalAICached);
   }, []);
 
+  // Voice handler: routes through AgentOrchestrator → TTS Router (not raw SpeechSynthesis)
   const handleTranscript = useCallback(
     async (text: string, isFinal: boolean) => {
       if (!isFinal) { setAvatarState("listening"); return; }
@@ -169,30 +134,40 @@ export default function Dashboard() {
       setNovaResponse("");
       logActivity("voice", `Voice command: "${text.slice(0, 50)}"`, "mic");
       try {
-        const result = await routeMessage(text, [], geminiKey, { mode: getAIMode() });
-        setNovaResponse(result.text);
+        const result = await agentOrchestrator.process({
+          text,
+          source: "voice" as const,
+          context: { userId: user?.uid || "" },
+        });
+        setNovaResponse(result.response);
         setAvatarState("speaking");
-        if (!isMuted) {
-          const tts = new SpeechSynthesisUtterance(result.text);
-          tts.onend = () => setAvatarState("idle");
-          window.speechSynthesis.speak(tts);
-        } else {
-          setTimeout(() => setAvatarState("idle"), 3000);
+        if (!isMuted && result.response) {
+          ttsRouter.speak(result.response).catch(() => {
+            // TTS failed but text still shows — that's ok
+          });
         }
+        // Set avatar back to idle after TTS finishes or after a delay
+        setTimeout(() => setAvatarState("idle"), isMuted ? 3000 : 8000);
       } catch {
         setAvatarState("error");
         setNovaResponse("I couldn't process that. Check your API key in Settings.");
         setTimeout(() => setAvatarState("idle"), 3000);
       }
     },
-    [geminiKey, isMuted]
+    [geminiKey, isMuted, user?.uid]
   );
 
   const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({ onTranscript: handleTranscript });
 
   const handleVoiceToggle = useCallback(() => {
-    if (isListening) { stopSTT(); setAvatarState("idle"); }
-    else { startSTT(); setAvatarState("listening"); }
+    if (isListening) {
+      stopSTT();
+      ttsRouter.stop(); // Stop any playing TTS
+      setAvatarState("idle");
+    } else {
+      startSTT();
+      setAvatarState("listening");
+    }
   }, [isListening, startSTT, stopSTT]);
 
   useWakeWord({ onWake: () => { if (!isListening) { startSTT(); setAvatarState("listening"); } } });
@@ -240,18 +215,17 @@ export default function Dashboard() {
 
         {/* ── Main Grid ────────────────────────────────── */}
         <div className="grid grid-cols-12 gap-4">
-          {/* Left Column - AI Core Overview */}
+          {/* Left Column - AI Core Overview (real data only) */}
           <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={1} className="col-span-3">
             <div className="jarvis-card p-4 h-full">
               <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">AI Core Overview</h3>
               <div className="space-y-3">
                 {[
-                  { label: "AI Core", value: "Active", color: "#10b981", icon: Cpu },
+                  { label: "AI Mode", value: getAIMode().charAt(0).toUpperCase() + getAIMode().slice(1), color: "#00d4ff", icon: Cpu },
                   { label: "Memory", value: `${memoryCount} Stored`, color: "#8b5cf6", icon: Brain },
-                  { label: "Voice", value: isListening ? "Listening" : "Online", color: "#00d4ff", icon: Mic },
-                  { label: "Agents", value: `${agents.filter(a => a.status === "active").length} Running`, color: "#10b981", icon: Bot },
+                  { label: "Voice", value: isListening ? "Listening" : (ttsRouter.isBarkAvailable() ? "Bark Ready" : "Browser TTS"), color: "#00d4ff", icon: Mic },
+                  { label: "Agents", value: `${agents.length} Available`, color: "#8b5cf6", icon: Bot },
                   { label: "Conversations", value: `${convCount} Total`, color: "#00d4ff", icon: MessageSquare },
-                  { label: "System", value: "Optimal", color: "#10b981", icon: Shield },
                 ].map((item) => (
                   <div key={item.label} className="flex items-center justify-between py-1.5 border-b border-[#1a2f4a]/50 last:border-0">
                     <div className="flex items-center gap-2">
@@ -320,10 +294,12 @@ export default function Dashboard() {
           <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3} className="col-span-3">
             <div className="jarvis-card p-4 h-full">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Live Intelligence</h3>
-                <span className="flex items-center gap-1 text-[9px] text-[#10b981]">
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse" />LIVE
-                </span>
+                <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Live Activity</h3>
+                {intelligence.length > 0 && (
+                  <span className="flex items-center gap-1 text-[9px] text-[#10b981]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse" />LIVE
+                  </span>
+                )}
               </div>
               <div className="space-y-2.5">
                 {intelligence.slice(0, 6).map((item) => (
@@ -351,11 +327,11 @@ export default function Dashboard() {
           <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={4} className="col-span-5">
             <div className="jarvis-card p-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Active Agents</h3>
+                <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Registered Agents</h3>
                 <button className="text-[10px] text-[#00d4ff] hover:underline" onClick={() => navigate("/agents")} aria-label="View all agents">View All</button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {agents.map((agent) => (
+                {agents.slice(0, 4).map((agent) => (
                   <div key={agent.id} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${agent.color}15` }}>
                       <Bot className="w-4 h-4" style={{ color: agent.color }} aria-hidden="true" />
@@ -366,36 +342,31 @@ export default function Dashboard() {
                     </div>
                   </div>
                 ))}
-              </div>
-            </div>
-          </motion.div>
-
-          {/* System Monitor */}
-          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={5} className="col-span-4">
-            <div className="jarvis-card p-4">
-              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-4">System Monitor</h3>
-              <div className="flex items-center justify-around">
-                <CircularGauge value={15} label="CPU" color="#00d4ff" />
-                <CircularGauge value={54} label="RAM" color="#8b5cf6" />
-                <CircularGauge value={40} label="Disk" color="#10b981" />
+                {agents.length === 0 && (
+                  <p className="col-span-2 text-[11px] text-[#5a7a9a] text-center py-3">No agents registered</p>
+                )}
               </div>
             </div>
           </motion.div>
 
           {/* Quick Stats */}
-          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={6} className="col-span-3">
-            <div className="jarvis-card p-4 h-full">
-              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Quick Stats</h3>
-              <div className="space-y-3">
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={5} className="col-span-7">
+            <div className="jarvis-card p-4">
+              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Quick Access</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { label: "Tasks Pending", value: taskCount, color: "#10b981", route: "/tasks" },
-                  { label: "Memories", value: memoryCount, color: "#8b5cf6", route: "/memory" },
-                  { label: "Conversations", value: convCount, color: "#00d4ff", route: "/chat" },
+                  { label: "Tasks", value: taskCount, color: "#10b981", route: "/tasks", icon: CheckSquare },
+                  { label: "Memories", value: memoryCount, color: "#8b5cf6", route: "/memory", icon: Brain },
+                  { label: "Conversations", value: convCount, color: "#00d4ff", route: "/chat", icon: MessageSquare },
+                  { label: "Calendar", value: counts.calendarEvents || 0, color: "#f59e0b", route: "/calendar", icon: Calendar },
                 ].map((stat) => (
                   <button key={stat.label} onClick={() => navigate(stat.route)} aria-label={`${stat.label}: ${stat.value}`}
-                    className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-[#0f2035]/40 hover:bg-[#162a42] border border-[#1a2f4a]/30 transition-colors group">
-                    <span className="text-[11px] text-[#5a7a9a] group-hover:text-[#c8d6e5]">{stat.label}</span>
-                    <span className="text-lg font-bold font-mono" style={{ color: stat.color }}>{stat.value}</span>
+                    className="w-full text-left flex items-center gap-3 p-3 rounded-lg bg-[#0f2035]/40 hover:bg-[#162a42] border border-[#1a2f4a]/30 transition-colors group">
+                    <stat.icon className="w-4 h-4" style={{ color: stat.color }} />
+                    <div>
+                      <p className="text-lg font-bold font-mono" style={{ color: stat.color }}>{stat.value}</p>
+                      <p className="text-[10px] text-[#5a7a9a] group-hover:text-[#c8d6e5]">{stat.label}</p>
+                    </div>
                   </button>
                 ))}
               </div>

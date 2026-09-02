@@ -1,5 +1,5 @@
 import { NavLink } from "react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   MessageSquare,
   CheckSquare,
@@ -23,143 +23,241 @@ import {
   Search,
   Wifi,
   WifiOff,
+  ChevronDown,
   FolderOpen,
-  BarChart3,
-  UserCog,
-  Download,
-  CalendarRange,
   Users,
-  Mic2,
   BookOpen,
   Terminal,
-  Home as HomeIcon,
-  Zap as ZapIcon,
   Store,
+  Mic2,
+  CalendarRange,
+  BarChart3,
+  Download,
+  UserCog,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
 import { useTheme } from "@/hooks/use-theme";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 
+interface NavItem {
+  to: string;
+  icon: React.ElementType;
+  label: string;
+  badge?: number;
+}
+
+interface NavCategory {
+  id: string;
+  label: string;
+  items: NavItem[];
+}
+
+const NAV_CATEGORIES: NavCategory[] = [
+  {
+    id: "converse",
+    label: "CONVERSE",
+    items: [
+      { to: "/chat", icon: MessageSquare, label: "Chat" },
+      { to: "/messages", icon: MessageSquare, label: "Conversations" },
+      { to: "/voice-experience", icon: Mic2, label: "Voice" },
+    ],
+  },
+  {
+    id: "organize",
+    label: "ORGANIZE",
+    items: [
+      { to: "/tasks", icon: CheckSquare, label: "Tasks" },
+      { to: "/calendar", icon: Calendar, label: "Calendar" },
+      { to: "/email", icon: Mail, label: "Email" },
+      { to: "/files", icon: Files, label: "Files" },
+    ],
+  },
+  {
+    id: "intelligence",
+    label: "INTELLIGENCE",
+    items: [
+      { to: "/memory", icon: Brain, label: "Memory" },
+      { to: "/agents", icon: Bot, label: "Agents" },
+      { to: "/browser-research", icon: BookOpen, label: "Research" },
+      { to: "/coding", icon: Code, label: "Coding" },
+      { to: "/workflows", icon: GitBranch, label: "Workflows" },
+    ],
+  },
+  {
+    id: "automate",
+    label: "AUTOMATE",
+    items: [
+      { to: "/automations", icon: Zap, label: "Automations" },
+      { to: "/devices", icon: Smartphone, label: "Devices" },
+    ],
+  },
+  {
+    id: "tools",
+    label: "TOOLS",
+    items: [
+      { to: "/browser", icon: Globe, label: "Browser" },
+      { to: "/plugins", icon: Puzzle, label: "Skills & Integrations" },
+    ],
+  },
+];
+
+const CATEGORY_STATE_KEY = "nova_sidebar_categories";
+
+function loadCategoryState(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(CATEGORY_STATE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch { /* ignore */ }
+  // Default: first category open, rest collapsed
+  return { converse: true, organize: false, intelligence: false, automate: false, tools: false };
+}
+
 export function Sidebar() {
   const { theme, setTheme } = useTheme();
   const { counts } = useDashboardData();
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>(loadCategoryState);
 
-  const navItems = [
-    { to: "/dashboard", icon: LayoutDashboard, label: "Command Center" },
-    { to: "/chat", icon: MessageSquare, label: "Conversations", badge: counts.conversations || undefined },
-    { to: "/tasks", icon: CheckSquare, label: "Tasks", badge: counts.tasks || undefined },
-    { to: "/memory", icon: Brain, label: "Memory" },
-    { to: "/calendar", icon: Calendar, label: "Calendar", badge: counts.calendarEvents || undefined },
-    { to: "/email", icon: Mail, label: "Email", badge: counts.emailDrafts || undefined },
-    { to: "/agents", icon: Bot, label: "Agents" },
-    { to: "/devices", icon: Smartphone, label: "Devices" },
-    { to: "/browser", icon: Globe, label: "Browser" },
-    { to: "/coding", icon: Code, label: "Coding" },
-    { to: "/smart-home", icon: Home, label: "Smart Home" },
-    { to: "/files", icon: Files, label: "Files", badge: counts.files || undefined },
-    { to: "/automations", icon: Zap, label: "Automations", badge: counts.automations || undefined },
-    { to: "/workflows", icon: GitBranch, label: "Workflow Planner" },
-    { to: "/activity", icon: Activity, label: "Activity", badge: counts.activities || undefined },
-    { to: "/memory-search", icon: Search, label: "Memory Search" },
-    { to: "/workspace", icon: FolderOpen, label: "Workspaces" },
-    { to: "/observability", icon: BarChart3, label: "Observability" },
-    { to: "/import-export", icon: Download, label: "Import / Export" },
-    { to: "/calendar-intel", icon: CalendarRange, label: "Calendar Intel" },
-    { to: "/voice-experience", icon: Mic2, label: "Voice Experience" },
-    { to: "/browser-research", icon: BookOpen, label: "Research Mode" },
-    { to: "/coding-workspace", icon: Terminal, label: "Code Workspace" },
-    { to: "/smart-home-scenes", icon: HomeIcon, label: "Smart Scenes" },
-    { to: "/automation-builder", icon: ZapIcon, label: "Auto Builder" },
-    { to: "/admin-team", icon: Users, label: "Admin & Team" },
-    { to: "/marketplace", icon: Store, label: "Marketplace" },
-    { to: "/security", icon: Shield, label: "Security" },
-    { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },
-    { to: "/personalization", icon: UserCog, label: "Personalization" },
-    { to: "/settings", icon: Settings, label: "Settings" },
-  ];
+  const toggleCategory = useCallback((id: string) => {
+    setOpenCategories((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      try { localStorage.setItem(CATEGORY_STATE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  // Apply badge counts to items
+  const badgeMap: Record<string, number | undefined> = {
+    "/chat": counts.conversations || undefined,
+    "/tasks": counts.tasks || undefined,
+    "/calendar": counts.calendarEvents || undefined,
+    "/email": counts.emailDrafts || undefined,
+    "/files": counts.files || undefined,
+    "/automations": counts.automations || undefined,
+
+    "/activity": counts.activities || undefined,
+  };
 
   return (
     <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-60 flex-col border-r border-nova-border bg-[#081422]/95 backdrop-blur-xl z-40">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-5 py-5 border-b border-nova-border">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#00d4ff] to-[#0ea5e9] flex items-center justify-center shadow-lg shadow-[#00d4ff]/20">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-nova-border">
+        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#00d4ff] to-[#0ea5e9] flex items-center justify-center shadow-lg shadow-[#00d4ff]/20">
           <span className="text-[#060e1a] font-black text-sm tracking-tight">N</span>
         </div>
         <div>
-          <h1 className="text-base font-bold text-[#e0ecf5] tracking-tight">NOVA</h1>
-          <p className="text-[9px] text-[#5a7a9a] uppercase tracking-[0.2em] font-medium">Command Center</p>
+          <h1 className="text-sm font-bold text-[#e0ecf5] tracking-tight">NOVA</h1>
+          <p className="text-[9px] text-[#5a7a9a] uppercase tracking-[0.15em] font-medium">AI Operating System</p>
         </div>
       </div>
 
-      {/* System Status Banner */}
-      <div className="mx-3 mt-3 px-3 py-2 rounded-lg bg-[#0f2035]/80 border border-[#1a2f4a]">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">System Status</span>
-          <span className="flex items-center gap-1.5 text-[10px] text-[#10b981] font-medium">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse" />
-            Optimal
-          </span>
-        </div>
+      {/* Command Center link (always visible) */}
+      <div className="px-3 pt-3">
+        <NavLink
+          to="/dashboard"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] transition-all duration-200",
+              isActive
+                ? "bg-[#00d4ff]/10 text-[#00d4ff] font-medium border border-[#00d4ff]/20"
+                : "text-[#5a7a9a] hover:text-[#c8d6e5] hover:bg-[#0f2035]/60 border border-transparent"
+            )
+          }
+        >
+          <LayoutDashboard className="w-4 h-4 shrink-0" />
+          <span className="flex-1">Command Center</span>
+        </NavLink>
       </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-0.5">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            aria-label={item.label}
-            className={({ isActive }) =>
-              cn(
-                "flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all duration-200 group",
-                isActive
-                  ? "bg-[#00d4ff]/10 text-[#00d4ff] font-medium border border-[#00d4ff]/20"
-                  : "text-[#5a7a9a] hover:text-[#c8d6e5] hover:bg-[#0f2035]/60 border border-transparent"
-              )
-            }
-          >
-            <item.icon className="w-4 h-4 shrink-0" aria-hidden="true" />
-            <span className="flex-1">{item.label}</span>
-            {item.badge != null && item.badge > 0 && (
-              <span className="text-[10px] bg-[#00d4ff]/15 text-[#00d4ff] px-1.5 py-0.5 rounded-full font-mono font-medium">
-                {item.badge}
-              </span>
+      {/* Categorized Navigation */}
+      <nav className="flex-1 overflow-y-auto py-2 px-3 space-y-1">
+        {NAV_CATEGORIES.map((cat) => (
+          <div key={cat.id}>
+            {/* Category header */}
+            <button
+              onClick={() => toggleCategory(cat.id)}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-[10px] text-[#5a7a9a] uppercase tracking-[0.15em] font-semibold hover:text-[#8a9ab5] transition-colors"
+              aria-expanded={openCategories[cat.id]}
+            >
+              <ChevronDown
+                className={cn(
+                  "w-3 h-3 transition-transform duration-200",
+                  !openCategories[cat.id] && "-rotate-90"
+                )}
+              />
+              {cat.label}
+            </button>
+
+            {/* Category items */}
+            {openCategories[cat.id] && (
+              <div className="space-y-0.5 mt-0.5">
+                {cat.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) =>
+                      cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all duration-200 group ml-2",
+                        isActive
+                          ? "bg-[#00d4ff]/10 text-[#00d4ff] font-medium border border-[#00d4ff]/20"
+                          : "text-[#5a7a9a] hover:text-[#c8d6e5] hover:bg-[#0f2035]/60 border border-transparent"
+                      )
+                    }
+                  >
+                    <item.icon className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span className="flex-1">{item.label}</span>
+                    {badgeMap[item.to] != null && badgeMap[item.to]! > 0 && (
+                      <span className="text-[10px] bg-[#00d4ff]/15 text-[#00d4ff] px-1.5 py-0.5 rounded-full font-mono font-medium">
+                        {badgeMap[item.to]}
+                      </span>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
             )}
-          </NavLink>
+          </div>
         ))}
       </nav>
 
       {/* Offline Queue Status */}
       <OfflineQueueStatus />
 
-      {/* Voice Status */}
-      <div className="px-4 py-3 border-t border-nova-border">
-        <div className="flex items-center gap-2 mb-2">
-          <Mic className="w-3.5 h-3.5 text-[#00d4ff]" aria-hidden="true" />
-          <span className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Voice Status</span>
-        </div>
-        <div className="flex items-center gap-1 h-6 px-2" role="img" aria-label="Voice waveform visualization">
-          {Array.from({ length: 20 }).map((_, i) => (
-            <div
-              key={i}
-              className="w-[3px] bg-[#00d4ff]/30 rounded-full"
-              style={{
-                height: `${4 + Math.sin(i * 0.8) * 8}px`,
-                animation: `nova-waveform 1.5s ease-in-out ${i * 0.05}s infinite`,
-              }}
-            />
-          ))}
-        </div>
-        <div className="flex items-center justify-between mt-2">
-          <button
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00d4ff]/10 text-[#00d4ff] text-[11px] font-medium hover:bg-[#00d4ff]/20 transition-colors"
-            aria-label="Tap to speak"
-          >
-            <Mic className="w-3 h-3" aria-hidden="true" />
-            Tap to Speak
-          </button>
-        </div>
+      {/* Bottom: Activity + Settings */}
+      <div className="px-3 py-2 border-t border-nova-border space-y-0.5">
+        <NavLink
+          to="/activity"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all duration-200",
+              isActive
+                ? "bg-[#00d4ff]/10 text-[#00d4ff] font-medium border border-[#00d4ff]/20"
+                : "text-[#5a7a9a] hover:text-[#c8d6e5] hover:bg-[#0f2035]/60 border border-transparent"
+            )
+          }
+        >
+          <Activity className="w-4 h-4 shrink-0" />
+          <span>Activity</span>
+          {counts.activities != null && counts.activities > 0 && (
+            <span className="text-[10px] bg-[#00d4ff]/15 text-[#00d4ff] px-1.5 py-0.5 rounded-full font-mono font-medium ml-auto">
+              {counts.activities}
+            </span>
+          )}
+        </NavLink>
+        <NavLink
+          to="/settings"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all duration-200",
+              isActive
+                ? "bg-[#00d4ff]/10 text-[#00d4ff] font-medium border border-[#00d4ff]/20"
+                : "text-[#5a7a9a] hover:text-[#c8d6e5] hover:bg-[#0f2035]/60 border border-transparent"
+            )
+          }
+        >
+          <Settings className="w-4 h-4 shrink-0" />
+          <span>Settings</span>
+        </NavLink>
       </div>
 
       {/* Theme Toggle + Config */}
@@ -207,12 +305,14 @@ function OfflineQueueStatus() {
     };
     check();
     const interval = setInterval(check, 5000);
-    window.addEventListener("online", () => setIsOnline(true));
-    window.addEventListener("offline", () => setIsOnline(false));
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
     return () => {
       clearInterval(interval);
-      window.removeEventListener("online", () => setIsOnline(true));
-      window.removeEventListener("offline", () => setIsOnline(false));
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
     };
   }, []);
 

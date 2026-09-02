@@ -5,7 +5,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { VlyToolbar } from "./vly-toolbar-readonly";
 import React, { Component, StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
@@ -38,6 +38,9 @@ const PluginsPage = lazy(() => import("./pages/Plugins"));
 const WorkflowPlannerPage = lazy(() => import("./pages/WorkflowPlanner"));
 const MemorySearchControlPage = lazy(() => import("./pages/MemorySearchControl"));
 const WorkspacePage = lazy(() => import("./pages/WorkspacePage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Sub-pages that redirect to canonical routes
 const ObservabilityDashboard = lazy(() => import("./pages/ObservabilityPage"));
 const PersonalizationSettings = lazy(() => import("./pages/PersonalizationPage"));
 const ImportExportPage = lazy(() => import("./pages/ImportExportPage"));
@@ -50,7 +53,6 @@ const SmartHomeScenesPage = lazy(() => import("./pages/SmartHomeScenes"));
 const AutomationBuilderPage = lazy(() => import("./pages/AutomationBuilder"));
 const AgentMarketplacePage = lazy(() => import("./pages/AgentMarketplace"));
 const TTSConfigPage = lazy(() => import("./pages/TTSConfigPage"));
-const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
   return (
@@ -144,9 +146,11 @@ createRoot(document.getElementById("root")!).render(
         <KeyboardShortcuts />
         <Suspense fallback={<RouteLoading />}>
           <Routes>
+            {/* Public routes */}
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<AuthPage redirectAfterAuth="/dashboard" />} />
 
+            {/* Core routes */}
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
@@ -168,18 +172,22 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/workflows" element={<ProtectedRoute><WorkflowPlannerPage /></ProtectedRoute>} />
             <Route path="/memory-search" element={<ProtectedRoute><MemorySearchControlPage /></ProtectedRoute>} />
             <Route path="/workspace" element={<ProtectedRoute><WorkspacePage /></ProtectedRoute>} />
-            <Route path="/observability" element={<ProtectedRoute><ObservabilityDashboard /></ProtectedRoute>} />
-            <Route path="/personalization" element={<ProtectedRoute><PersonalizationSettings /></ProtectedRoute>} />
-            <Route path="/import-export" element={<ProtectedRoute><ImportExportPage /></ProtectedRoute>} />
-            <Route path="/calendar-intel" element={<ProtectedRoute><CalendarIntelligencePage /></ProtectedRoute>} />
-            <Route path="/admin-team" element={<ProtectedRoute><AdminTeamPage /></ProtectedRoute>} />
+
+            {/* Sub-pages (still accessible, but grouped under canonical routes in sidebar) */}
             <Route path="/voice-experience" element={<ProtectedRoute><VoiceExperiencePage /></ProtectedRoute>} />
             <Route path="/browser-research" element={<ProtectedRoute><BrowserResearchPage /></ProtectedRoute>} />
             <Route path="/coding-workspace" element={<ProtectedRoute><CodingWorkspacePage /></ProtectedRoute>} />
-            <Route path="/smart-home-scenes" element={<ProtectedRoute><SmartHomeScenesPage /></ProtectedRoute>} />
-            <Route path="/automation-builder" element={<ProtectedRoute><AutomationBuilderPage /></ProtectedRoute>} />
-            <Route path="/marketplace" element={<ProtectedRoute><AgentMarketplacePage /></ProtectedRoute>} />
-            <Route path="/tts-config" element={<ProtectedRoute><TTSConfigPage /></ProtectedRoute>} />
+            <Route path="/admin-team" element={<ProtectedRoute><AdminTeamPage /></ProtectedRoute>} />
+
+            {/* Redirect old duplicate URLs to canonical routes */}
+            <Route path="/calendar-intel" element={<ProtectedRoute><Navigate to="/calendar" replace /></ProtectedRoute>} />
+            <Route path="/smart-home-scenes" element={<ProtectedRoute><Navigate to="/smart-home" replace /></ProtectedRoute>} />
+            <Route path="/automation-builder" element={<ProtectedRoute><Navigate to="/automations" replace /></ProtectedRoute>} />
+            <Route path="/marketplace" element={<ProtectedRoute><Navigate to="/agents" replace /></ProtectedRoute>} />
+            <Route path="/tts-config" element={<ProtectedRoute><Navigate to="/settings" replace /></ProtectedRoute>} />
+            <Route path="/observability" element={<ProtectedRoute><Navigate to="/settings" replace /></ProtectedRoute>} />
+            <Route path="/personalization" element={<ProtectedRoute><Navigate to="/settings" replace /></ProtectedRoute>} />
+            <Route path="/import-export" element={<ProtectedRoute><Navigate to="/settings" replace /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
