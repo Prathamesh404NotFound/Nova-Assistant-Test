@@ -68,7 +68,7 @@ export default function Dashboard() {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [novaResponse, setNovaResponse] = useState("");
   const [isMuted, setIsMuted] = useState(false);
-  const [geminiKey] = useState(() => localStorage.getItem("nova_gemini_key") || "");
+  const [geminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "");
   const [showLocalAIDownload, setShowLocalAIDownload] = useState(false);
   const [localAIAvailable, setLocalAIAvailable] = useState<boolean | null>(null);
   const [localAICached, setLocalAICached] = useState(false);
