@@ -4,7 +4,7 @@ import { MobileNav } from "./mobile-nav";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-[#06060c]">
+    <div className="min-h-screen bg-[#060e1a] jarvis-grid-bg">
       <Sidebar />
       <main className="lg:ml-60 min-h-screen pb-20 lg:pb-0">
         {children}

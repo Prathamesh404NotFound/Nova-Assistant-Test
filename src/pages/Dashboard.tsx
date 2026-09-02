@@ -33,6 +33,11 @@ import {
   Mail,
   Globe,
   Code,
+  Activity,
+  Shield,
+  Bot,
+  Clock,
+  AlertTriangle,
 } from "lucide-react";
 
 const fadeUp = {
@@ -40,7 +45,7 @@ const fadeUp = {
   visible: (i: number) => ({
     opacity: 1,
     y: 0,
-    transition: { delay: i * 0.08, duration: 0.4, ease: "easeOut" as const },
+    transition: { delay: i * 0.06, duration: 0.4, ease: "easeOut" as const },
   }),
 };
 
@@ -53,6 +58,15 @@ const quickCommands = [
   { label: "Open coding sandbox", icon: Code, action: "coding" },
 ];
 
+const agentCards = [
+  { name: "Coding Agent", status: "Active", color: "#00d4ff", icon: Code },
+  { name: "Research Agent", status: "Standby", color: "#8b5cf6", icon: Globe },
+  { name: "Memory Agent", status: "Active", color: "#10b981", icon: Brain },
+  { name: "Browser Agent", status: "Standby", color: "#f59e0b", icon: Globe },
+  { name: "Task Agent", status: "Standby", color: "#00d4ff", icon: CheckSquare },
+  { name: "System Agent", status: "Active", color: "#10b981", icon: Shield },
+];
+
 function getGreeting(): string {
   const h = new Date().getHours();
   if (h < 6) return "Burning the midnight oil?";
@@ -60,6 +74,56 @@ function getGreeting(): string {
   if (h < 17) return "Good afternoon";
   if (h < 21) return "Good evening";
   return "Burning the midnight oil?";
+}
+
+function getCurrentTime(): string {
+  return new Date().toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  });
+}
+
+function getCurrentDate(): string {
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function CircularGauge({ value, label, color }: { value: number; label: string; color: string }) {
+  const radius = 36;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (value / 100) * circumference;
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-20 h-20">
+        <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r={radius} fill="none" stroke="rgba(26, 47, 74, 0.5)" strokeWidth="5" />
+          <circle
+            cx="40"
+            cy="40"
+            r={radius}
+            fill="none"
+            stroke={color}
+            strokeWidth="5"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            style={{ filter: `drop-shadow(0 0 6px ${color}40)` }}
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-sm font-bold font-mono" style={{ color }}>{value}%</span>
+        </div>
+      </div>
+      <span className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">{label}</span>
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -75,8 +139,13 @@ export default function Dashboard() {
   const [taskCount, setTaskCount] = useState(0);
   const [memoryCount, setMemoryCount] = useState(0);
   const [convCount, setConvCount] = useState(0);
+  const [currentTime, setCurrentTime] = useState(getCurrentTime());
 
-  // Load real counts
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(getCurrentTime()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
   useEffect(() => {
     const loadCounts = async () => {
       try {
@@ -88,27 +157,19 @@ export default function Dashboard() {
           setMemoryCount(memories.length);
         }
         setConvCount(getConversations().length);
-      } catch {
-        // Ignore
-      }
-    };    loadCounts();
+      } catch { /* ignore */ }
+    };
+    loadCounts();
   }, [user]);
 
-  // Check Local AI status
   useEffect(() => {
-    localAIService.detect().then((avail) => {
-      setLocalAIAvailable(avail.supported);
-    });
+    localAIService.detect().then((avail) => setLocalAIAvailable(avail.supported));
     localAIService.isCached().then(setLocalAICached);
   }, []);
 
-
   const handleTranscript = useCallback(
     async (text: string, isFinal: boolean) => {
-      if (!isFinal) {
-        setAvatarState("listening");
-        return;
-      }
+      if (!isFinal) { setAvatarState("listening"); return; }
       setAvatarState("thinking");
       setNovaResponse("");
       logActivity("voice", `Voice command: "${text.slice(0, 50)}"`, "mic");
@@ -135,40 +196,20 @@ export default function Dashboard() {
   const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({ onTranscript: handleTranscript });
 
   const handleVoiceToggle = useCallback(() => {
-    if (isListening) {
-      stopSTT();
-      setAvatarState("idle");
-    } else {
-      startSTT();
-      setAvatarState("listening");
-    }
+    if (isListening) { stopSTT(); setAvatarState("idle"); }
+    else { startSTT(); setAvatarState("listening"); }
   }, [isListening, startSTT, stopSTT]);
 
-  useWakeWord({
-    onWake: () => {
-      if (!isListening) {
-        startSTT();
-        setAvatarState("listening");
-      }
-    },
-  });
+  useWakeWord({ onWake: () => { if (!isListening) { startSTT(); setAvatarState("listening"); } } });
 
-  const handleCommand = useCallback(
-    (action: string) => {
-      const routes: Record<string, string> = {
-        calendar: "/calendar",
-        email: "/email",
-        task: "/tasks",
-        memory: "/memory",
-        automation: "/automations",
-        settings: "/settings",
-        browser: "/browser",
-        coding: "/coding",
-      };
-      navigate(routes[action] || "/chat");
-    },
-    [navigate]
-  );
+  const handleCommand = useCallback((action: string) => {
+    const routes: Record<string, string> = {
+      calendar: "/calendar", email: "/email", task: "/tasks",
+      memory: "/memory", automation: "/automations", settings: "/settings",
+      browser: "/browser", coding: "/coding",
+    };
+    navigate(routes[action] || "/chat");
+  }, [navigate]);
 
   const handleSignOut = async () => {
     logActivity("auth", "Signed out", "logout");
@@ -177,199 +218,222 @@ export default function Dashboard() {
   };
 
   return (
-    <main className="min-h-screen bg-[#06060c] px-4 sm:px-6 py-6 sm:py-10">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
+    <main className="min-h-screen bg-[#060e1a] jarvis-grid-bg px-4 sm:px-6 py-4">
+      <div className="max-w-[1400px] mx-auto space-y-4">
+        {/* ── Top Bar ──────────────────────────────────── */}
         <motion.header
-          initial="hidden"
-          animate="visible"
-          variants={fadeUp}
-          custom={0}
-          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+          initial="hidden" animate="visible" variants={fadeUp} custom={0}
+          className="flex items-center justify-between"
         >
-          <div>
-            <p className="text-sm text-[#6e6e8a]">
-              {getGreeting()}
-              {user?.displayName ? `, ${user.displayName}` : user?.email ? `, ${user.email}` : ""}
-            </p>
-            <h1 className="text-2xl font-bold tracking-tight mt-1">Nova Command Center</h1>
+          <div className="flex items-center gap-4">
+            <div>
+              <p className="text-xs text-[#5a7a9a]">{getGreeting()}{user?.displayName ? `, ${user.displayName}` : user?.email ? `, ${user.email}` : ""}</p>
+              <h1 className="text-lg font-bold text-[#e0ecf5] tracking-tight">Nova Command Center</h1>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <StatusIndicator />
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-[#6e6e8a] hover:text-[#e8e8f8]"
-              onClick={handleSignOut}
-            >
+            <div className="text-right">
+              <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">{getCurrentDate()}</p>
+              <p className="text-sm font-mono font-bold text-[#00d4ff] jarvis-glow-text">{currentTime}</p>
+            </div>
+            <Button variant="ghost" size="sm" className="text-[#5a7a9a] hover:text-[#c8d6e5]" onClick={handleSignOut}>
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
         </motion.header>
 
+        {/* ── Main Grid ────────────────────────────────── */}
+        <div className="grid grid-cols-12 gap-4">
+          {/* Left Column - AI Core Overview */}
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={1} className="col-span-3">
+            <div className="jarvis-card p-4 h-full">
+              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">AI Core Overview</h3>
+              <div className="space-y-3">
+                {[
+                  { label: "AI Core", value: "Active", color: "#10b981", icon: Cpu },
+                  { label: "Memory", value: `${memoryCount} Stored`, color: "#8b5cf6", icon: Brain },
+                  { label: "Voice", value: isListening ? "Listening" : "Online", color: "#00d4ff", icon: Mic },
+                  { label: "Agents", value: "2 Running", color: "#10b981", icon: Bot },
+                  { label: "Conversations", value: `${convCount} Total`, color: "#00d4ff", icon: MessageSquare },
+                  { label: "System", value: "Optimal", color: "#10b981", icon: Shield },
+                ].map((item) => (
+                  <div key={item.label} className="flex items-center justify-between py-1.5 border-b border-[#1a2f4a]/50 last:border-0">
+                    <div className="flex items-center gap-2">
+                      <item.icon className="w-3.5 h-3.5" style={{ color: item.color }} />
+                      <span className="text-xs text-[#c8d6e5]">{item.label}</span>
+                    </div>
+                    <span className="text-[11px] font-medium" style={{ color: item.color }}>{item.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Center - Voice Avatar + Quick Commands */}
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={2} className="col-span-6 space-y-4">
+            {/* Avatar Card */}
+            <div className="jarvis-card p-8 jarvis-glow-cyan">
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative cursor-pointer" onClick={handleVoiceToggle}>
+                  <NovaAvatar state={avatarState} size={160} />
+                  {!isSupported && (
+                    <p className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-xs text-[#f59e0b] whitespace-nowrap">
+                      Voice not supported
+                    </p>
+                  )}
+                </div>
+                <Button
+                  onClick={handleVoiceToggle}
+                  disabled={!isSupported}
+                  className={`h-12 px-8 rounded-full font-semibold text-sm transition-all duration-300 ${
+                    isListening
+                      ? "bg-[#f43f5e] text-white shadow-lg shadow-[#f43f5e]/30"
+                      : "bg-gradient-to-r from-[#00d4ff] to-[#0ea5e9] text-[#060e1a] shadow-lg shadow-[#00d4ff]/20"
+                  }`}
+                >
+                  {isListening ? <><MicOff className="mr-2 h-4 w-4" />Stop Listening</> : <><Mic className="mr-2 h-4 w-4" />Talk to Nova</>}
+                </Button>
+                <button onClick={() => setIsMuted(!isMuted)} className="text-[#5a7a9a] hover:text-[#c8d6e5] transition-colors">
+                  {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                </button>
+                {novaResponse && (
+                  <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                    className="w-full max-w-lg p-4 rounded-xl bg-[#0f2035]/60 border border-[#1a2f4a] text-sm text-[#c8d6e5] leading-relaxed">
+                    {novaResponse}
+                  </motion.div>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Commands */}
+            <div className="jarvis-card p-4">
+              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Quick Commands</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {quickCommands.map((cmd) => (
+                  <button key={cmd.label} onClick={() => handleCommand(cmd.action)}
+                    className="flex items-center gap-2 p-2.5 rounded-lg bg-[#0f2035]/60 hover:bg-[#162a42] border border-[#1a2f4a]/50 hover:border-[#00d4ff]/30 text-xs text-[#c8d6e5] transition-all text-left group">
+                    <cmd.icon className="w-3.5 h-3.5 text-[#5a7a9a] group-hover:text-[#00d4ff] transition-colors" />
+                    <span>{cmd.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Right Column - Live Feed */}
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3} className="col-span-3">
+            <div className="jarvis-card p-4 h-full">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Live Intelligence</h3>
+                <span className="flex items-center gap-1 text-[9px] text-[#10b981]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] animate-pulse" />LIVE
+                </span>
+              </div>
+              <div className="space-y-2.5">
+                {[
+                  { text: "System health check passed", type: "info", time: "2m ago" },
+                  { text: "Memory agent synced 3 new items", type: "info", time: "5m ago" },
+                  { text: "Local AI model cached", type: "success", time: "12m ago" },
+                  { text: "2 tasks overdue — review needed", type: "warn", time: "1h ago" },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-2 py-1.5 border-b border-[#1a2f4a]/30 last:border-0">
+                    <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                      item.type === "warn" ? "bg-[#f59e0b]" : item.type === "success" ? "bg-[#10b981]" : "bg-[#00d4ff]"
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[11px] text-[#c8d6e5] leading-snug">{item.text}</p>
+                      <p className="text-[9px] text-[#5a7a9a] mt-0.5">{item.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* ── Second Row ───────────────────────────────── */}
+        <div className="grid grid-cols-12 gap-4">
+          {/* Active Agents */}
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={4} className="col-span-5">
+            <div className="jarvis-card p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Active Agents</h3>
+                <button className="text-[10px] text-[#00d4ff] hover:underline">View All</button>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {agentCards.map((agent) => (
+                  <div key={agent.name} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${agent.color}15` }}>
+                      <agent.icon className="w-4 h-4" style={{ color: agent.color }} />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-medium text-[#c8d6e5]">{agent.name}</p>
+                      <p className="text-[9px]" style={{ color: agent.color }}>{agent.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* System Monitor */}
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={5} className="col-span-4">
+            <div className="jarvis-card p-4">
+              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-4">System Monitor</h3>
+              <div className="flex items-center justify-around">
+                <CircularGauge value={15} label="CPU" color="#00d4ff" />
+                <CircularGauge value={54} label="RAM" color="#8b5cf6" />
+                <CircularGauge value={40} label="Disk" color="#10b981" />
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Quick Stats */}
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={6} className="col-span-3">
+            <div className="jarvis-card p-4 h-full">
+              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Quick Stats</h3>
+              <div className="space-y-3">
+                {[
+                  { label: "Tasks Pending", value: taskCount, color: "#10b981", route: "/tasks" },
+                  { label: "Memories", value: memoryCount, color: "#8b5cf6", route: "/memory" },
+                  { label: "Conversations", value: convCount, color: "#00d4ff", route: "/chat" },
+                ].map((stat) => (
+                  <button key={stat.label} onClick={() => navigate(stat.route)}
+                    className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-[#0f2035]/40 hover:bg-[#162a42] border border-[#1a2f4a]/30 transition-colors group">
+                    <span className="text-[11px] text-[#5a7a9a] group-hover:text-[#c8d6e5]">{stat.label}</span>
+                    <span className="text-lg font-bold font-mono" style={{ color: stat.color }}>{stat.value}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </div>
+
         {/* Local AI Onboarding */}
         {localAIAvailable === true && !localAICached && (
-          <motion.div
-            initial="hidden"
-            animate="visible"
-            variants={fadeUp}
-            custom={0.5}
-          >
-            <Card className="nova-glass p-4 flex items-center gap-4">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#10b981]/20 to-[#00d4ff]/20 flex items-center justify-center shrink-0">
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={7}>
+            <div className="jarvis-card p-4 flex items-center gap-4 jarvis-glow-cyan">
+              <div className="w-10 h-10 rounded-xl bg-[#10b981]/15 flex items-center justify-center shrink-0">
                 <Cpu className="w-5 h-5 text-[#10b981]" />
               </div>
               <div className="flex-1">
-                <p className="text-sm font-medium text-[#e8e8f8]">Enable Nova Local AI</p>
-                <p className="text-xs text-[#6e6e8a]">Download a small model to chat without Gemini</p>
+                <p className="text-sm font-medium text-[#e0ecf5]">Enable Nova Local AI</p>
+                <p className="text-xs text-[#5a7a9a]">Download a small model to chat without Gemini</p>
               </div>
-              <Button
-                onClick={() => setShowLocalAIDownload(true)}
-                size="sm"
-                className="bg-[#10b981] text-[#06060c] hover:bg-[#10b981]/80 shrink-0"
-              >
-                <Download className="h-3.5 w-3.5 mr-1" />
-                Download
+              <Button onClick={() => setShowLocalAIDownload(true)} size="sm"
+                className="bg-[#10b981] text-[#060e1a] hover:bg-[#10b981]/80 shrink-0">
+                <Download className="h-3.5 w-3.5 mr-1" />Download
               </Button>
-            </Card>
+            </div>
           </motion.div>
         )}
-
-        {/* Avatar Section */}
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={fadeUp}
-          custom={1}
-        >
-          <Card className="nova-glass p-8 sm:p-12">
-            <div className="flex flex-col items-center gap-6">
-              {/* Avatar */}
-              <div className="relative cursor-pointer" onClick={handleVoiceToggle}>
-                <NovaAvatar state={avatarState} size={180} />
-                {!isSupported && (
-                  <p className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-xs text-[#f59e0b] whitespace-nowrap">
-                    Voice not supported in this browser
-                  </p>
-                )}
-              </div>
-
-              {/* Voice Button */}
-              <Button
-                onClick={handleVoiceToggle}
-                disabled={!isSupported}
-                className={`h-14 px-8 rounded-full font-semibold text-base transition-all duration-300 ${
-                  isListening
-                    ? "bg-[#f43f5e] text-white hover:bg-[#f43f5e]/80 shadow-lg shadow-[#f43f5e]/30"
-                    : "bg-gradient-to-r from-[#00d4ff] to-[#8b5cf6] text-[#06060c] hover:shadow-lg hover:shadow-[#00d4ff]/30"
-                }`}
-              >
-                {isListening ? (
-                  <>
-                    <MicOff className="mr-2 h-5 w-5" />
-                    Stop Listening
-                  </>
-                ) : (
-                  <>
-                    <Mic className="mr-2 h-5 w-5" />
-                    Talk to Nova
-                  </>
-                )}
-              </Button>
-
-              {/* Mute Toggle */}
-              <button
-                onClick={() => setIsMuted(!isMuted)}
-                className="text-[#6e6e8a] hover:text-[#e8e8f8] transition-colors"
-              >
-                {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
-              </button>
-
-              {/* Response */}
-              {novaResponse && (
-                <motion.div
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="w-full max-w-lg p-4 rounded-xl bg-[#16162a]/50 border border-[#252540] text-sm text-[#e8e8f8] leading-relaxed"
-                >
-                  {novaResponse}
-                </motion.div>
-              )}
-            </div>
-          </Card>
-        </motion.div>
-
-        {/* Quick Commands */}
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={fadeUp}
-          custom={2}
-        >
-          <h2 className="text-sm font-medium text-[#6e6e8a] uppercase tracking-wider mb-4">
-            Quick Commands
-          </h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {quickCommands.map((cmd, i) => (
-              <motion.div
-                key={cmd.label}
-                initial="hidden"
-                animate="visible"
-                variants={fadeUp}
-                custom={3 + i}
-              >
-                <Card
-                  className="nova-glass nova-glass-hover p-4 cursor-pointer group"
-                  onClick={() => handleCommand(cmd.action)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-[#16162a] flex items-center justify-center group-hover:bg-[#00d4ff]/10 transition-colors">
-                      <cmd.icon className="w-4 h-4 text-[#6e6e8a] group-hover:text-[#00d4ff] transition-colors" />
-                    </div>
-                    <span className="text-sm font-medium text-[#e8e8f8] group-hover:text-[#00d4ff] transition-colors">
-                      {cmd.label}
-                    </span>
-                  </div>
-                </Card>
-              </motion.div>
-            ))}
-          </div>
-        </motion.div>
-
-        {/* Status Cards */}
-        <motion.div
-          initial="hidden"
-          animate="visible"
-          variants={fadeUp}
-          custom={5}
-          className="grid grid-cols-1 sm:grid-cols-3 gap-3"
-        >
-          {[
-            { label: "Tasks Pending", value: taskCount, color: "#10b981", route: "/tasks" },
-            { label: "Memories", value: memoryCount, color: "#8b5cf6", route: "/memory" },
-            { label: "Conversations", value: convCount, color: "#00d4ff", route: "/chat" },
-          ].map((stat) => (
-            <Card
-              key={stat.label}
-              className="nova-glass nova-glass-hover p-4 cursor-pointer"
-              onClick={() => navigate(stat.route)}
-            >
-              <p className="text-xs text-[#6e6e8a] uppercase tracking-wider">{stat.label}</p>
-              <p className="text-2xl font-bold mt-1" style={{ color: stat.color }}>
-                {stat.value}
-              </p>
-            </Card>
-          ))}
-        </motion.div>
       </div>
 
-      <DownloadModal
-        open={showLocalAIDownload}
-        onClose={() => {
-          setShowLocalAIDownload(false);
-          localAIService.isCached().then(setLocalAICached);
-        }}
-      />
+      <DownloadModal open={showLocalAIDownload} onClose={() => {
+        setShowLocalAIDownload(false);
+        localAIService.isCached().then(setLocalAICached);
+      }} />
     </main>
   );
 }

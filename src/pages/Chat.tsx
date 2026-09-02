@@ -157,9 +157,9 @@ export default function Chat() {
   ];
 
   return (
-    <main className="min-h-screen bg-[#06060c] flex flex-col">
+    <main className="min-h-screen bg-[#060e1a] jarvis-grid-bg flex flex-col">
       {/* Header */}
-      <div className="border-b border-[#252540] px-4 py-3 flex items-center justify-between">
+      <div className="border-b border-[#1a2f4a] px-4 py-3 flex items-center justify-between bg-[#081422]/80 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -243,7 +243,7 @@ export default function Chat() {
       <div className="flex flex-1 overflow-hidden">
         {/* Conversation Sidebar */}
         {showSidebar && (
-          <div className="w-64 border-r border-[#252540] bg-[#0a0a14] overflow-y-auto shrink-0 hidden lg:block">
+          <div className="w-64 border-r border-[#1a2f4a] bg-[#081422]/90 overflow-y-auto shrink-0 hidden lg:block">
             <div className="p-3 space-y-1">
               <Button
                 onClick={handleNewChat}
@@ -285,13 +285,11 @@ export default function Chat() {
         )}
 
         {/* Mobile Sidebar Overlay */}
-        {showSidebar && (
-          <div
-            className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+        {showSidebar && (        <div className="fixed inset-0 z-40 bg-black/60 lg:hidden"
             onClick={() => setShowSidebar(false)}
           >
             <div
-              className="w-64 h-full bg-[#0a0a14] border-r border-[#252540] overflow-y-auto"
+              className="w-64 h-full bg-[#081422] border-r border-[#1a2f4a] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-3 space-y-1">
@@ -346,8 +344,8 @@ export default function Chat() {
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto py-8">
               <NovaAvatar state="idle" size={90} />
-              <h2 className="text-lg font-bold text-white mt-4">Nova Personal Operating System</h2>
-              <p className="text-[#6e6e8a] mt-2 text-sm max-w-md">
+              <h2 className="text-lg font-bold text-[#e0ecf5] mt-4">Nova Personal Operating System</h2>
+              <p className="text-[#5a7a9a] mt-2 text-sm max-w-md">
                 {aiMode === "local"
                   ? "Running in Local AI mode. Casual conversations stay on your device."
                   : aiMode === "gemini"
@@ -362,7 +360,7 @@ export default function Chat() {
                       logActivity("chat", `Quick: "${p.label.slice(0, 30)}"`, "zap");
                       sendMessage(p.label);
                     }}
-                    className="flex items-center justify-between p-2.5 rounded-lg bg-[#121222] hover:bg-[#1a1a32] border border-[#252540] text-xs text-slate-300 transition-colors text-left"
+                    className="flex items-center justify-between p-2.5 rounded-lg bg-[#0f2035]/60 hover:bg-[#162a42] border border-[#1a2f4a]/50 text-xs text-[#c8d6e5] transition-colors text-left"
                   >
                     <span className="flex items-center gap-2">
                       {p.icon}
@@ -410,8 +408,8 @@ export default function Chat() {
               <Card
                 className={`max-w-[85%] sm:max-w-[75%] p-3.5 text-sm leading-relaxed ${
                   msg.role === "user"
-                    ? "bg-[#00d4ff]/10 border-[#00d4ff]/30 text-[#e8e8f8]"
-                    : "bg-[#111122] border-[#252540] text-[#e8e8f8]"
+                    ? "bg-[#00d4ff]/10 border-[#00d4ff]/20 text-[#c8d6e5]"
+                    : "bg-[#0b1929] border-[#1a2f4a] text-[#c8d6e5]"
                 }`}
               >
                 {msg.role === "assistant" && msg.content ? (
@@ -480,7 +478,7 @@ export default function Chat() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-[#252540] px-4 py-3 bg-[#0a0a14]">
+      <div className="border-t border-[#1a2f4a] px-4 py-3 bg-[#081422]/90 backdrop-blur-sm">
         <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-3xl mx-auto">
           {isSupported && (
             <Button
@@ -506,7 +504,7 @@ export default function Chat() {
                 : "Type a message (Nova decides local vs cloud)..."
             }
             rows={1}
-            className="flex-1 bg-[#16162a] border border-[#252540] rounded-xl px-4 py-2.5 text-sm text-[#e8e8f8] placeholder:text-[#6e6e8a] focus:outline-none focus:border-[#00d4ff]/40 resize-none"
+            className="flex-1 bg-[#0f2035] border border-[#1a2f4a] rounded-xl px-4 py-2.5 text-sm text-[#c8d6e5] placeholder:text-[#5a7a9a] focus:outline-none focus:border-[#00d4ff]/40 resize-none"
           />
           {isStreaming ? (
             <Button

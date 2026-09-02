@@ -48,76 +48,76 @@
   --color-nova-surface: #0d0d16;
   --color-nova-surface-light: #16162a;
   --color-nova-surface-hover: #1e1e38;
-  --color-nova-border: #252540;
-  --color-nova-border-light: #35355a;
+  --color-nova-border: #1a2744;
+  --color-nova-border-light: #253552;
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: #06060c;
-  --foreground: #e8e8f8;
-  --card: #0d0d16;
-  --card-foreground: #e8e8f8;
-  --popover: #0d0d16;
-  --popover-foreground: #e8e8f8;
+  --radius: 0.5rem;
+  --background: #060e1a;
+  --foreground: #c8d6e5;
+  --card: #0b1929;
+  --card-foreground: #c8d6e5;
+  --popover: #0b1929;
+  --popover-foreground: #c8d6e5;
   --primary: #00d4ff;
-  --primary-foreground: #06060c;
-  --secondary: #16162a;
-  --secondary-foreground: #e8e8f8;
-  --muted: #16162a;
-  --muted-foreground: #6e6e8a;
-  --accent: #1e1e38;
-  --accent-foreground: #e8e8f8;
+  --primary-foreground: #060e1a;
+  --secondary: #0f2035;
+  --secondary-foreground: #c8d6e5;
+  --muted: #0f2035;
+  --muted-foreground: #5a7a9a;
+  --accent: #162a42;
+  --accent-foreground: #c8d6e5;
   --destructive: #f43f5e;
-  --border: #252540;
-  --input: #252540;
+  --border: #1a2f4a;
+  --input: #1a2f4a;
   --ring: #00d4ff;
   --chart-1: #00d4ff;
   --chart-2: #8b5cf6;
   --chart-3: #10b981;
   --chart-4: #f59e0b;
   --chart-5: #f43f5e;
-  --sidebar: #0d0d16;
-  --sidebar-foreground: #e8e8f8;
+  --sidebar: #081422;
+  --sidebar-foreground: #c8d6e5;
   --sidebar-primary: #00d4ff;
-  --sidebar-primary-foreground: #06060c;
-  --sidebar-accent: #16162a;
-  --sidebar-accent-foreground: #e8e8f8;
-  --sidebar-border: #252540;
+  --sidebar-primary-foreground: #060e1a;
+  --sidebar-accent: #0f2035;
+  --sidebar-accent-foreground: #c8d6e5;
+  --sidebar-border: #1a2f4a;
   --sidebar-ring: #00d4ff;
 }
 
 .dark {
-  --background: #06060c;
-  --foreground: #e8e8f8;
-  --card: #0d0d16;
-  --card-foreground: #e8e8f8;
-  --popover: #0d0d16;
-  --popover-foreground: #e8e8f8;
+  --background: #060e1a;
+  --foreground: #c8d6e5;
+  --card: #0b1929;
+  --card-foreground: #c8d6e5;
+  --popover: #0b1929;
+  --popover-foreground: #c8d6e5;
   --primary: #00d4ff;
-  --primary-foreground: #06060c;
-  --secondary: #16162a;
-  --secondary-foreground: #e8e8f8;
-  --muted: #16162a;
-  --muted-foreground: #6e6e8a;
-  --accent: #1e1e38;
-  --accent-foreground: #e8e8f8;
+  --primary-foreground: #060e1a;
+  --secondary: #0f2035;
+  --secondary-foreground: #c8d6e5;
+  --muted: #0f2035;
+  --muted-foreground: #5a7a9a;
+  --accent: #162a42;
+  --accent-foreground: #c8d6e5;
   --destructive: #f43f5e;
-  --border: #252540;
-  --input: #252540;
+  --border: #1a2f4a;
+  --input: #1a2f4a;
   --ring: #00d4ff;
   --chart-1: #00d4ff;
   --chart-2: #8b5cf6;
   --chart-3: #10b981;
   --chart-4: #f59e0b;
   --chart-5: #f43f5e;
-  --sidebar: #0d0d16;
-  --sidebar-foreground: #e8e8f8;
+  --sidebar: #081422;
+  --sidebar-foreground: #c8d6e5;
   --sidebar-primary: #00d4ff;
-  --sidebar-primary-foreground: #06060c;
-  --sidebar-accent: #16162a;
-  --sidebar-accent-foreground: #e8e8f8;
-  --sidebar-border: #252540;
+  --sidebar-primary-foreground: #060e1a;
+  --sidebar-accent: #0f2035;
+  --sidebar-accent-foreground: #c8d6e5;
+  --sidebar-border: #1a2f4a;
   --sidebar-ring: #00d4ff;
 }
 
@@ -135,84 +135,127 @@
   }
 }
 
-/* Nova glass morphism */
+/* ── JARVIS Grid Background ─────────────────────────── */
+.jarvis-grid-bg {
+  background-image:
+    linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* ── JARVIS Glass Panels ────────────────────────────── */
+.jarvis-card {
+  background: linear-gradient(135deg, rgba(11, 25, 41, 0.9), rgba(15, 32, 53, 0.7));
+  border: 1px solid rgba(0, 212, 255, 0.12);
+  border-radius: 0.75rem;
+  backdrop-filter: blur(12px);
+  position: relative;
+  overflow: hidden;
+}
+.jarvis-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.3), transparent);
+}
+.jarvis-card:hover {
+  border-color: rgba(0, 212, 255, 0.25);
+  box-shadow: 0 0 20px rgba(0, 212, 255, 0.05);
+}
+
+/* ── Nova Glass (kept for compat) ───────────────────── */
 .nova-glass {
   backdrop-filter: blur(24px);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 1rem;
+  background: rgba(11, 25, 41, 0.8);
+  border: 1px solid rgba(0, 212, 255, 0.08);
+  border-radius: 0.75rem;
 }
-
 .nova-glass-hover:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(15, 32, 53, 0.9);
+  border-color: rgba(0, 212, 255, 0.2);
 }
 
-/* Avatar breathing animation */
+/* ── Glow Effects ───────────────────────────────────── */
+.jarvis-glow-cyan {
+  box-shadow: 0 0 15px rgba(0, 212, 255, 0.15), inset 0 0 15px rgba(0, 212, 255, 0.03);
+}
+.jarvis-glow-text {
+  text-shadow: 0 0 10px rgba(0, 212, 255, 0.5), 0 0 30px rgba(0, 212, 255, 0.2);
+}
+.jarvis-border-glow {
+  border-color: rgba(0, 212, 255, 0.3);
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.1);
+}
+
+/* ── Gauge Animations ───────────────────────────────── */
+@keyframes jarvis-gauge-fill {
+  from { stroke-dashoffset: 251; }
+}
+@keyframes jarvis-scan {
+  0% { transform: translateY(-100%); opacity: 0; }
+  50% { opacity: 0.5; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+@keyframes jarvis-pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.4); opacity: 0; }
+}
+@keyframes jarvis-data-stream {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 0% 100%; }
+}
+
+/* ── Avatar Animations ──────────────────────────────── */
 @keyframes nova-breathe {
   0%, 100% { transform: scale(1); opacity: 0.8; }
   50% { transform: scale(1.02); opacity: 1; }
 }
-
 @keyframes nova-pulse-glow {
   0%, 100% { box-shadow: 0 0 20px rgba(0, 212, 255, 0.2); }
   50% { box-shadow: 0 0 40px rgba(0, 212, 255, 0.4); }
 }
-
 @keyframes nova-pulse-violet {
   0%, 100% { box-shadow: 0 0 20px rgba(139, 92, 246, 0.2); }
   50% { box-shadow: 0 0 40px rgba(139, 92, 246, 0.4); }
 }
-
-@keyframes nova-lip-sync {
-  0%, 100% { transform: scaleY(1); }
-  25% { transform: scaleY(0.6); }
-  50% { transform: scaleY(0.3); }
-  75% { transform: scaleY(0.8); }
-}
-
 @keyframes nova-blink {
   0%, 45%, 55%, 100% { transform: scaleY(1); }
   50% { transform: scaleY(0.1); }
 }
-
 @keyframes nova-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-6px); }
 }
-
-@keyframes nova-waveform {
-  0% { height: 4px; }
-  50% { height: 20px; }
-  100% { height: 4px; }
-}
-
-@keyframes nova-particle {
-  0% { transform: translateY(0) scale(1); opacity: 1; }
-  100% { transform: translateY(-40px) scale(0); opacity: 0; }
-}
-
 @keyframes nova-spin-slow {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
-
 @keyframes nova-gradient-shift {
   0% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }
   100% { background-position: 0% 50%; }
 }
+@keyframes nova-waveform {
+  0% { height: 4px; }
+  50% { height: 20px; }
+  100% { height: 4px; }
+}
+@keyframes nova-fade-in-up {
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .nova-avatar-breathe { animation: nova-breathe 4s ease-in-out infinite; }
 .nova-avatar-pulse { animation: nova-pulse-glow 3s ease-in-out infinite; }
 .nova-avatar-pulse-violet { animation: nova-pulse-violet 2s ease-in-out infinite; }
-.nova-avatar-lip-sync { animation: nova-lip-sync 0.15s ease-in-out infinite; }
 .nova-avatar-blink { animation: nova-blink 4s ease-in-out infinite; }
 .nova-avatar-float { animation: nova-float 3s ease-in-out infinite; }
 .nova-spin-slow { animation: nova-spin-slow 20s linear infinite; }
 
 .nova-gradient-text {
-  background: linear-gradient(135deg, #00d4ff, #8b5cf6);
+  background: linear-gradient(135deg, #00d4ff, #0ea5e9);
   background-size: 200% 200%;
   animation: nova-gradient-shift 3s ease infinite;
   -webkit-background-clip: text;
@@ -220,7 +263,7 @@
   background-clip: text;
 }
 
-/* Stagger animations for page entrance */
+/* ── Stagger Animations ─────────────────────────────── */
 .nova-stagger > * {
   opacity: 0;
   transform: translateY(16px);
@@ -235,11 +278,13 @@
 .nova-stagger > *:nth-child(7) { animation-delay: 0.35s; }
 .nova-stagger > *:nth-child(8) { animation-delay: 0.4s; }
 
-@keyframes nova-fade-in-up {
-  to { opacity: 1; transform: translateY(0); }
-}
+/* ── Scrollbar ──────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, 0.15); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 212, 255, 0.3); }
 
-/* Code / status font */
+/* ── Code / Status Font ─────────────────────────────── */
 .font-mono {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
 }

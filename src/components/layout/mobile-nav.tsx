@@ -19,7 +19,7 @@ const mobileNavItems = [
 
 export function MobileNav() {
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-nova-surface/95 backdrop-blur-xl border-t border-nova-border">
+    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-[#081422]/95 backdrop-blur-xl border-t border-[#1a2f4a]">
       <div className="flex items-center justify-around px-2 py-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         {mobileNavItems.map((item) =>
           item.isCenter ? (
@@ -29,12 +29,12 @@ export function MobileNav() {
               className={({ isActive }) =>
                 cn(
                   "relative -mt-6 flex items-center justify-center w-14 h-14 rounded-full transition-all duration-300",
-                  "bg-gradient-to-br from-[#00d4ff] to-[#8b5cf6] shadow-lg shadow-[#00d4ff]/30",
+                  "bg-gradient-to-br from-[#00d4ff] to-[#0ea5e9] shadow-lg shadow-[#00d4ff]/30",
                   isActive && "scale-110 shadow-[#00d4ff]/50"
                 )
               }
             >
-              <Mic className="w-6 h-6 text-white" />
+              <Mic className="w-6 h-6 text-[#060e1a]" />
             </NavLink>
           ) : (
             <NavLink
@@ -42,10 +42,10 @@ export function MobileNav() {
               to={item.to}
               className={({ isActive }) =>
                 cn(
-                  "flex flex-col items-center gap-1 px-3 py-1.5 rounded-lg text-xs transition-all duration-200 min-w-[48px]",
+                  "flex flex-col items-center gap-1 px-3 py-1.5 rounded-lg text-[10px] transition-all duration-200 min-w-[48px]",
                   isActive
                     ? "text-[#00d4ff]"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-[#5a7a9a] hover:text-[#c8d6e5]"
                 )
               }
             >
