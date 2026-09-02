@@ -10,6 +10,7 @@ import { useChat } from "@/hooks/use-chat";
 import { useNavigate } from "react-router";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
+import ReactMarkdown from "react-markdown";
 import {
   Send,
   Mic,
@@ -25,6 +26,8 @@ import {
   PanelLeftOpen,
   Square,
   Download,
+  Copy,
+  Check,
 } from "lucide-react";
 
 export default function Chat() {
@@ -407,7 +410,52 @@ export default function Chat() {
                     : "bg-[#111122] border-[#252540] text-[#e8e8f8]"
                 }`}
               >
-                <p className="whitespace-pre-wrap">{msg.content || (msg.isStreaming ? "..." : "")}</p>
+                {msg.role === "assistant" && msg.content ? (
+                  <div className="prose prose-invert prose-sm max-w-none">
+                    <ReactMarkdown
+                      components={{
+                        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+                        code: ({ className, children, ...props }) => {
+                          const match = /language-(\w+)/.exec(className || "");
+                          if (match) {
+                            return (
+                              <code className="block bg-[#0a0a14] rounded-lg p-3 my-2 text-xs overflow-x-auto">
+                                {children}
+                              </code>
+                            );
+                          }
+                          return (
+                            <code className="bg-[#1e1e38] px-1.5 py-0.5 rounded text-[#00d4ff]" {...props}>
+                              {children}
+                            </code>
+                          );
+                        },
+                        ul: ({ children }) => <ul className="list-disc list-inside mb-2">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside mb-2">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1">{children}</li>,
+                        strong: ({ children }) => <strong className="text-white font-semibold">{children}</strong>,
+                        em: ({ children }) => <em className="text-[#6e6e8a]">{children}</em>,
+                        a: ({ href, children }) => (
+                          <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#00d4ff] hover:underline">
+                            {children}
+                          </a>
+                        ),
+                        h1: ({ children }) => <h1 className="text-lg font-bold text-white mb-2">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-base font-bold text-white mb-2">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-sm font-bold text-white mb-2">{children}</h3>,
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-2 border-[#6e6e8a] pl-3 italic text-[#6e6e8a] mb-2">
+                            {children}
+                          </blockquote>
+                        ),
+                      }}
+                    >
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  <p className="whitespace-pre-wrap">{msg.content || (msg.isStreaming ? "..." : "")}</p>
+                )}
                 {msg.role === "assistant" && (msg.source || msg.latencyMs !== undefined) && (
                   <div className="mt-2 pt-2 border-t border-white/5 flex items-center justify-between text-[10px] font-mono text-slate-400">
                     <div className="flex items-center gap-1.5">
