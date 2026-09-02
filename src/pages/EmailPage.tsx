@@ -13,6 +13,7 @@ import {
   type EmailDraft,
 } from "@/lib/local-store";
 import { logActivity } from "@/lib/local-store";
+import { ConfirmAction, useConfirm } from "@/components/ConfirmAction";
 import {
   Mail,
   Plus,
@@ -72,8 +73,16 @@ export default function EmailPage() {
     refresh();
   }, [to, subject, body, editingId, refresh]);
 
-  const handleSend = useCallback(() => {
+  const { confirm, props: confirmProps } = useConfirm();
+
+  const handleSend = useCallback(async () => {
     if (!to.trim() || !subject.trim()) return;
+    const ok = await confirm({
+      title: "Send Email",
+      description: `Send this email to ${to}? This action cannot be undone.`,
+      confirmLabel: "Send Email",
+    });
+    if (!ok) return;
     if (editingId) {
       updateEmailDraft(editingId, { to, subject, body, status: "sent" });
     } else {
@@ -82,7 +91,7 @@ export default function EmailPage() {
     logActivity("email", `Sent email to ${to}: ${subject}`, "send");
     resetForm();
     refresh();
-  }, [to, subject, body, editingId, refresh]);
+  }, [to, subject, body, editingId, refresh, confirm]);
 
   const handleEdit = useCallback((draft: EmailDraft) => {
     setTo(draft.to);
@@ -107,6 +116,14 @@ export default function EmailPage() {
   const sentCount = drafts.filter((d) => d.status === "sent").length;
 
   return (
+    <>
+    {confirmProps && (
+      <ConfirmAction
+        {...confirmProps}
+        title={confirmProps.title}
+        description={confirmProps.description}
+      />
+    )}
     <main className="min-h-screen bg-[#06060c] px-4 sm:px-6 py-6 sm:py-10">
       <div className="max-w-4xl mx-auto space-y-6">
         <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0}>
@@ -246,5 +263,6 @@ export default function EmailPage() {
         )}
       </div>
     </main>
+    </>
   );
 }

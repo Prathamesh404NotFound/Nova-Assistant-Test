@@ -14,6 +14,7 @@ import {
   type Automation,
 } from "@/lib/local-store";
 import { logActivity } from "@/lib/local-store";
+import { ConfirmAction, useConfirm } from "@/components/ConfirmAction";
 import {
   Zap,
   Plus,
@@ -115,20 +116,32 @@ export default function AutomationsPage() {
     [automations, refresh]
   );
 
+  const { confirm, props: confirmProps } = useConfirm();
+
   const handleDelete = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const auto = automations.find((a) => a.id === id);
+      if (!auto) return;
+      const ok = await confirm({
+        title: "Delete Automation",
+        description: `Delete "${auto.name}"? This cannot be undone.`,
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
       deleteAutomation(id);
-      if (auto) logActivity("automation", `Deleted automation: ${auto.name}`, "trash");
+      logActivity("automation", `Deleted automation: ${auto.name}`, "trash");
       refresh();
     },
-    [automations, refresh]
+    [automations, refresh, confirm]
   );
 
   const enabledCount = automations.filter((a) => a.enabled).length;
   const totalRuns = automations.reduce((sum, a) => sum + a.runCount, 0);
 
   return (
+    <>
+    {confirmProps && <ConfirmAction {...confirmProps} />}
     <main className="min-h-screen bg-[#06060c] px-4 sm:px-6 py-6 sm:py-10">
       <div className="max-w-3xl mx-auto space-y-6">
         <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0}>
@@ -298,5 +311,6 @@ export default function AutomationsPage() {
         )}
       </div>
     </main>
+    </>
   );
 }

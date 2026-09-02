@@ -11,6 +11,7 @@ import {
   type SmartDevice,
 } from "@/lib/local-store";
 import { logActivity } from "@/lib/local-store";
+import { ConfirmAction, useConfirm } from "@/components/ConfirmAction";
 import {
   Home,
   Lightbulb,
@@ -63,20 +64,33 @@ export default function SmartHomePage() {
     setDevices(getSmartDevices());
   }, []);
 
+  const { confirm, props: confirmProps } = useConfirm();
+
   const handleToggle = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const device = devices.find((d) => d.id === id);
       if (!device) return;
       const newIsOn = !device.isOn;
+      // Require confirmation for sensitive devices (locks, cameras)
+      const isSensitive = device.type === "lock" || device.type === "camera";
+      if (isSensitive) {
+        const ok = await confirm({
+          title: `${newIsOn ? "Unlock" : "Lock"} ${device.name}`,
+          description: `Are you sure you want to ${newIsOn ? "unlock" : "lock"} your ${device.name}? This controls a physical security device.`,
+          confirmLabel: newIsOn ? "Unlock" : "Lock",
+          danger: !newIsOn,
+        });
+        if (!ok) return;
+      }
       updateSmartDevice(id, { isOn: newIsOn });
       logActivity(
         "device",
         `${newIsOn ? "Turned on" : "Turned off"} ${device.name}`,
-        newIsOn ? "power" : "power"
+        "power"
       );
       refresh();
     },
-    [devices, refresh]
+    [devices, refresh, confirm]
   );
 
   const handleValueChange = useCallback(
@@ -91,6 +105,8 @@ export default function SmartHomePage() {
   const rooms = [...new Set(devices.map((d) => d.room))];
 
   return (
+    <>
+    {confirmProps && <ConfirmAction {...confirmProps} />}
     <main className="min-h-screen bg-[#06060c] px-4 sm:px-6 py-6 sm:py-10">
       <div className="max-w-4xl mx-auto space-y-6">
         <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={0}>
@@ -200,5 +216,6 @@ export default function SmartHomePage() {
         </motion.div>
       </div>
     </main>
+    </>
   );
 }
