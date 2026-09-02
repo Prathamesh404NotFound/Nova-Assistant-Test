@@ -5,7 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { NovaAvatar, type AvatarState } from "@/components/nova/avatar";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
-import { useOfflineTTS } from "@/hooks/use-offline-tts";
+import { useIndicTTS } from "@/hooks/use-indic-tts";
 import { useChat } from "@/hooks/use-chat";
 import { useNavigate } from "react-router";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
@@ -42,7 +42,11 @@ export default function Chat() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
 
-  const { isSpeaking, speak, stop: stopTTS } = useOfflineTTS();
+  const { state: ttsState, speak: indicSpeak, stop: stopTTS } = useIndicTTS({
+    onPlay: () => setAvatarState("speaking"),
+    onEnd: () => setAvatarState("idle"),
+  });
+  const isSpeaking = ttsState.isPlaying;
 
   const handleNavigate = useCallback(
     (path: string) => {
@@ -68,7 +72,7 @@ export default function Chat() {
     apiKey: geminiKey,
     onNavigate: handleNavigate,
     onSpeak: (text) => {
-      speak(text);
+      indicSpeak(text);
     },
   });
 

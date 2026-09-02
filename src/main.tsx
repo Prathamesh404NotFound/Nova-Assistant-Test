@@ -49,6 +49,7 @@ const CodingWorkspacePage = lazy(() => import("./pages/CodingWorkspace"));
 const SmartHomeScenesPage = lazy(() => import("./pages/SmartHomeScenes"));
 const AutomationBuilderPage = lazy(() => import("./pages/AutomationBuilder"));
 const AgentMarketplacePage = lazy(() => import("./pages/AgentMarketplace"));
+const TTSConfigPage = lazy(() => import("./pages/TTSConfigPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
@@ -178,6 +179,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/smart-home-scenes" element={<ProtectedRoute><SmartHomeScenesPage /></ProtectedRoute>} />
             <Route path="/automation-builder" element={<ProtectedRoute><AutomationBuilderPage /></ProtectedRoute>} />
             <Route path="/marketplace" element={<ProtectedRoute><AgentMarketplacePage /></ProtectedRoute>} />
+            <Route path="/tts-config" element={<ProtectedRoute><TTSConfigPage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
