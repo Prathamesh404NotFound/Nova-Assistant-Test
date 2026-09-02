@@ -9,6 +9,7 @@ import { routeMessage, type AIRouterSource } from "@/ai/AIRouter";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { IntentRouter } from "@/services/ai/intent-router";
 import { responseCache } from "@/services/ai/response-cache";
+import { agentOrchestrator } from "@/services/agent/AgentOrchestrator";
 import { type Intent } from "@/services/ai/types";
 import {
   getConversations,
@@ -149,6 +150,47 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
 
       try {
         const mode = getAIMode();
+
+        // ── Agent Orchestrator: try local tool execution first ──
+        try {
+          const agentResult = await agentOrchestrator.process({
+            text: content.trim(),
+            source: "chat",
+            context: { userId: "" },
+          });
+
+          if (agentResult.response) {
+            // Orchestrator handled it — show result directly
+            setLastSource("local");
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId
+                  ? {
+                      ...m,
+                      content: agentResult.response,
+                      source: "local",
+                      latencyMs: agentResult.durationMs,
+                      isStreaming: false,
+                    }
+                  : m
+              )
+            );
+            addMessageToConversation(convId, {
+              id: assistantId,
+              role: "assistant",
+              content: agentResult.response,
+              timestamp: Date.now(),
+              source: "local",
+              latencyMs: agentResult.durationMs,
+            });
+            setConversations(getConversations());
+            if (onSpeak) onSpeak(agentResult.response);
+            return; // Skip AI pipeline
+          }
+          // Empty response = orchestrator deferred to AI — continue below
+        } catch {
+          // Orchestrator error — fall through to AI pipeline
+        }
 
         // Check cache first
         const cachedResponse = responseCache.get(content.trim(), mode);
