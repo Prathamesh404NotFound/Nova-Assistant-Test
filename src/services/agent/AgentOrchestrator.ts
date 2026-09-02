@@ -12,8 +12,14 @@
 import { toolRegistry } from "./ToolRegistry";
 import { toolExecutor } from "./ToolExecutor";
 import { registerAllTools } from "./register-tools";
-import { callGemini } from "@/lib/gemini";
 import { missionManager } from "@/services/mission";
+import {
+  planAndExecuteTools,
+  buildFunctionDeclarations,
+  type ToolCall,
+  type ToolCallResult,
+  type ToolCallError,
+} from "./tool-calls";
 import type {
   AgentInput,
   AgentResult,
@@ -235,57 +241,7 @@ const INTENT_PATTERNS: IntentPattern[] = [
 const HIGH_CONFIDENCE = 0.85;
 const MEDIUM_CONFIDENCE = 0.6;
 
-// ─── AI Tool Planner ────────────────────────────────────────────────────────
 
-interface PlannedTool {
-  name: string;
-  args: Record<string, unknown>;
-  reason: string;
-}
-
-/**
- * Ask Gemini to plan which tools to execute for a complex user request.
- * Returns an ordered list of tool calls with their arguments.
- */
-async function planToolsWithAI(
-  userInput: string,
-  geminiKey: string,
-  toolList: Array<{ name: string; description: string; parameters: string }>
-): Promise<PlannedTool[]> {
-  const toolDescriptions = toolList
-    .map((t) => `- ${t.name}: ${t.description} (params: ${t.parameters})`)
-    .join("\n");
-
-  const prompt = `You are Nova's tool planner. Given a user request, decide which tools to call.
-
-Available tools:
-${toolDescriptions}
-
-User request: "${userInput}"
-
-Return ONLY a JSON array of tool calls. Each tool call is an object with:
-- name: tool name
-- args: arguments object
-- reason: brief reason
-
-If no tools are needed, return an empty array [].
-Do NOT include any explanation outside the JSON array.`;
-
-  try {
-    const response = await callGemini(geminiKey, prompt, undefined, "reasoning");
-    // Extract JSON from response
-    const jsonMatch = response.match(/\[[\s\S]*\]/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((t: any) => t.name && typeof t.name === "string");
-      }
-    }
-  } catch {
-    // AI planning failed — return empty
-  }
-  return [];
-}
 
 // ─── Agent Orchestrator ──────────────────────────────────────────────────────
 
@@ -531,15 +487,13 @@ class AgentOrchestratorImpl {
         route: { route: "AI_TOOL", confidence: 0.7 },
         durationMs: Date.now() - startMs,
       };
-    }
-
-    // ── Phase 2: AI-driven tool planning + tool loop ───────────────────
+    }      // ── Phase 2: Structured tool planning + tool loop ────────────────
     return this.toolLoop(input, context, startMs, actionsExecuted);
   }
 
   /**
-   * TOOL LOOP: plan tools → execute → observe → decide if more → repeat.
-   * This is the core agent loop matching the architecture diagram.
+   * TOOL LOOP: plan structured tool calls → execute → observe → decide if more → repeat.
+   * Uses the new structured ToolCall protocol instead of regex-parsed JSON.
    */
   private async toolLoop(
     input: AgentInput,
@@ -551,55 +505,60 @@ class AgentOrchestratorImpl {
     const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "";
     const MAX_LOOP_STEPS = 3;
 
-    // Get available tools for the planner
-    const availableTools = toolRegistry.listAvailable().map((t) => ({
-      name: t.name,
-      description: t.description,
-      parameters: JSON.stringify(t.inputSchema.properties),
-    }));
+    // Get structured function declarations from ToolRegistry
+    const toolDeclarations = buildFunctionDeclarations();
 
-    // Loop: plan → execute → observe → decide
+    let previousResults: ToolCallResult[] = [];
+
+    // Loop: plan → validate → execute → observe → decide
     for (let step = 0; step < MAX_LOOP_STEPS; step++) {
-      // PLAN: ask AI which tools to call
-      const tools = await planToolsWithAI(input.text, geminiKey, availableTools);
+      // PLAN: structured tool planning via Gemini
+      const { calls, results, errors } = await planAndExecuteTools(
+        {
+          userInput: input.text,
+          geminiKey,
+          toolDeclarations,
+          previousResults: previousResults.length > 0 ? previousResults : undefined,
+        },
+        context,
+        { source: input.source }
+      );
 
-      // No tools planned — break and let AI generate a text response
-      if (tools.length === 0) break;
+      // Log validation errors for debugging
+      if (errors.length > 0) {
+        console.warn("[AgentOrchestrator] Tool call validation errors:", errors);
+      }
 
-      // EXECUTE: run each planned tool
-      let allSucceeded = true;
-      for (const planned of tools) {
-        const tool = toolRegistry.get(planned.name);
-        if (!tool) continue;
-        const result = await toolExecutor.execute(planned.name, planned.args, context, {
-          source: context.source === "voice" ? "voice" : "chat",
+      // No valid tools planned — break
+      if (calls.length === 0) break;
+
+      // Attach results to actions
+      for (const result of results) {
+        actionsExecuted.push({
+          tool: result.tool,
+          success: result.success,
+          result: {
+            success: result.success,
+            tool: result.tool,
+            data: result.data,
+            message: result.message,
+            error: result.error,
+            metadata: result.metadata,
+          } as ToolResult,
         });
-        actionsExecuted.push({ tool: planned.name, success: result.success, result });
-        if (!result.success) allSucceeded = false;
       }
 
-      // OBSERVE & DECIDE: if all tools succeeded, check if follow-up is needed
-      if (allSucceeded && actionsExecuted.length > 0) {
-        const followUp = await this.observeAndDecide(
-          input.text,
-          actionsExecuted,
-          geminiKey
-        );
-        if (followUp.length > 0) {
-          // More actions needed — loop continues
-          for (const planned of followUp) {
-            const tool = toolRegistry.get(planned.name);
-            if (!tool) continue;
-            const result = await toolExecutor.execute(planned.name, planned.args, context, {
-              source: context.source === "voice" ? "voice" : "chat",
-            });
-            actionsExecuted.push({ tool: planned.name, success: result.success, result });
-          }
-        }
-      }
+      previousResults = results;
 
-      // After first execution cycle, break
-      break;
+      // Check if follow-up is needed (observation step)
+      const allSucceeded = results.every((r) => r.success);
+      if (allSucceeded && results.length > 0) {
+        const followUp = await this.observeAndDecide(input.text, actionsExecuted, geminiKey);
+        if (followUp.length === 0) break;
+        // Follow-up calls will be handled in the next iteration
+      } else {
+        break; // Some tools failed — stop the loop
+      }
     }
 
     // Build response from all executed actions
@@ -627,45 +586,30 @@ class AgentOrchestratorImpl {
 
   /**
    * OBSERVE & DECIDE: after tools execute, check if follow-up actions are needed.
-   * For example: after creating a calendar event, check for conflicts.
+   * Returns PlannedTool[] (legacy format) for the tool loop.
    */
   private async observeAndDecide(
     userRequest: string,
     executed: Array<{ tool: string; success: boolean; result?: ToolResult }>,
     geminiKey: string
-  ): Promise<PlannedTool[]> {
+  ): Promise<Array<{ name: string; args: Record<string, unknown> }>> {
     if (!geminiKey) return [];
 
     const executedSummary = executed
       .map((a) => `${a.tool}: ${a.success ? "success" : "failed"} - ${a.result?.message || ""}`)
       .join("\n");
 
-    const prompt = `You are Nova's action observer. A user asked: "${userRequest}"
+    // Use structured tool planning for follow-up as well
+    const { calls } = await planAndExecuteTools(
+      {
+        userInput: `Follow up on: "${userRequest}"\n\nAlready done:\n${executedSummary}\n\nIf additional actions are needed, list them. Otherwise return [].`,
+        geminiKey,
+        toolDeclarations: buildFunctionDeclarations(),
+      },
+      { userId: "", source: "system" }
+    );
 
-Tools were executed:
-${executedSummary}
-
-Based on the results, does any follow-up action make sense? Consider:
-- If a calendar event was created, should we check for conflicts?
-- If a task was created, should we set a reminder?
-- If an email was drafted, should we also create a calendar event for the meeting?
-
-Return ONLY a JSON array of additional tool calls if follow-up is needed, or [] if done.
-Format: [{"name": "tool.name", "args": {...}, "reason": "..."}]`;
-
-    try {
-      const response = await callGemini(geminiKey, prompt, undefined, "reasoning");
-      const jsonMatch = response.match(/\[[\s\S]*\]/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.filter((t: any) => t.name && typeof t.name === "string");
-        }
-      }
-    } catch {
-      // Observation failed — no follow-up
-    }
-    return [];
+    return calls.map((c) => ({ name: c.name, args: c.arguments }));
   }
 
   /**
