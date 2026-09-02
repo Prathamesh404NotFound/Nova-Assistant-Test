@@ -23,6 +23,9 @@ import {
   Search,
   Wifi,
   WifiOff,
+  FolderOpen,
+  BarChart3,
+  UserCog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
@@ -50,8 +53,11 @@ export function Sidebar() {
     { to: "/workflows", icon: GitBranch, label: "Workflow Planner" },
     { to: "/activity", icon: Activity, label: "Activity", badge: counts.activities || undefined },
     { to: "/memory-search", icon: Search, label: "Memory Search" },
+    { to: "/workspace", icon: FolderOpen, label: "Workspaces" },
+    { to: "/observability", icon: BarChart3, label: "Observability" },
     { to: "/security", icon: Shield, label: "Security" },
     { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },
+    { to: "/personalization", icon: UserCog, label: "Personalization" },
     { to: "/settings", icon: Settings, label: "Settings" },
   ];
 

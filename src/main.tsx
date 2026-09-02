@@ -35,6 +35,9 @@ const SecurityPage = lazy(() => import("./pages/Security"));
 const PluginsPage = lazy(() => import("./pages/Plugins"));
 const WorkflowPlannerPage = lazy(() => import("./pages/WorkflowPlanner"));
 const MemorySearchControlPage = lazy(() => import("./pages/MemorySearchControl"));
+const WorkspacePage = lazy(() => import("./pages/WorkspacePage"));
+const ObservabilityDashboard = lazy(() => import("./pages/ObservabilityPage"));
+const PersonalizationSettings = lazy(() => import("./pages/PersonalizationPage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
@@ -150,6 +153,9 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/plugins" element={<ProtectedRoute><PluginsPage /></ProtectedRoute>} />
             <Route path="/workflows" element={<ProtectedRoute><WorkflowPlannerPage /></ProtectedRoute>} />
             <Route path="/memory-search" element={<ProtectedRoute><MemorySearchControlPage /></ProtectedRoute>} />
+            <Route path="/workspace" element={<ProtectedRoute><WorkspacePage /></ProtectedRoute>} />
+            <Route path="/observability" element={<ProtectedRoute><ObservabilityDashboard /></ProtectedRoute>} />
+            <Route path="/personalization" element={<ProtectedRoute><PersonalizationSettings /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
