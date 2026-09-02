@@ -7,6 +7,7 @@ import React, { Component, StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
+import { CommandPalette } from "@/components/CommandPalette";
 import "./index.css";
 
 // Lazy load all pages
@@ -101,6 +102,13 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Register service worker for PWA
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
@@ -109,6 +117,7 @@ createRoot(document.getElementById("root")!).render(
       </ToolbarErrorBoundary>
       <BrowserRouter>
         <RouteSyncer />
+        <CommandPalette />
         <Suspense fallback={<RouteLoading />}>
           <Routes>
             <Route path="/" element={<Landing />} />

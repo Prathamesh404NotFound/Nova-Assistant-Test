@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
+import { useTheme } from "@/hooks/use-theme";
+import { Sun, Moon, Monitor } from "lucide-react";
 
 const navItems = [
   { to: "/dashboard", icon: MessageSquare, label: "Home" },
@@ -40,6 +42,8 @@ const navItems = [
 ];
 
 export function Sidebar() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
+
   return (
     <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-60 flex-col border-r border-nova-border bg-nova-surface/80 backdrop-blur-xl z-40">
       {/* Logo */}
@@ -81,6 +85,36 @@ export function Sidebar() {
           <span className="text-xs text-muted-foreground">Nova Online</span>
         </div>
         <ConfigStatus />
+        {/* Theme Toggle */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setTheme("dark")}
+            className={cn(
+              "p-1.5 rounded-lg transition-colors",
+              theme === "dark" ? "bg-[#00d4ff]/15 text-[#00d4ff]" : "text-[#6e6e8a] hover:text-[#e8e8f8]"
+            )}
+          >
+            <Moon className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setTheme("light")}
+            className={cn(
+              "p-1.5 rounded-lg transition-colors",
+              theme === "light" ? "bg-[#00d4ff]/15 text-[#00d4ff]" : "text-[#6e6e8a] hover:text-[#e8e8f8]"
+            )}
+          >
+            <Sun className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={() => setTheme("system")}
+            className={cn(
+              "p-1.5 rounded-lg transition-colors",
+              theme === "system" ? "bg-[#00d4ff]/15 text-[#00d4ff]" : "text-[#6e6e8a] hover:text-[#e8e8f8]"
+            )}
+          >
+            <Monitor className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </aside>
   );
