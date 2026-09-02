@@ -1,3 +1,18 @@
+/**
+ * Nova Memory Manager — Legacy Compatibility Layer
+ * 
+ * This module provides backward compatibility for code that imports
+ * from memory-manager directly. All operations delegate to the unified
+ * MemoryService.
+ * 
+ * New code should import from MemoryService.ts directly.
+ */
+
+import { unifiedMemory } from "./MemoryService";
+import type { MemoryCategory } from "./MemoryTypes";
+
+// ─── Types (preserved for backward compatibility) ───────────────────────────
+
 export type MemoryType =
   | "PREFERENCE"
   | "PERSON"
@@ -21,22 +36,63 @@ export interface Memory {
   source: "user" | "assistant" | "inferred";
 }
 
-class MemoryManager {
-  private STORAGE_KEY = "nova_memories_v2";
+// ─── Legacy Memory Type Mapping ─────────────────────────────────────────────
 
+function legacyTypeToCategory(type: MemoryType): MemoryCategory {
+  const map: Record<MemoryType, MemoryCategory> = {
+    PREFERENCE: "preference",
+    PERSON: "person",
+    PROJECT: "project",
+    FACT: "semantic",
+    HABIT: "behavioral",
+    INSTRUCTION: "behavioral",
+    CONVERSATION: "short_term",
+    TASK_CONTEXT: "project",
+  };
+  return map[type] || "semantic";
+}
+
+function categoryToLegacyType(category: MemoryCategory): MemoryType {
+  const map: Record<MemoryCategory, MemoryType> = {
+    working: "CONVERSATION",
+    short_term: "CONVERSATION",
+    episodic: "FACT",
+    semantic: "FACT",
+    preference: "PREFERENCE",
+    person: "PERSON",
+    project: "PROJECT",
+    correction: "FACT",
+    important_event: "FACT",
+    behavioral: "HABIT",
+  };
+  return map[category] || "FACT";
+}
+
+function toLegacyMemory(m: import("./MemoryService").Memory): Memory {
+  return {
+    id: m.id,
+    type: categoryToLegacyType(m.category),
+    key: m.tags[0] || m.entities[0] || m.content.slice(0, 60),
+    value: m.content,
+    importance: m.importance,
+    confidence: m.confidence,
+    createdAt: m.createdAt,
+    updatedAt: m.updatedAt,
+    lastAccessedAt: m.lastAccessedAt,
+    source: m.source === "observed" ? "inferred" : m.source as "user" | "assistant" | "inferred",
+  };
+}
+
+// ─── Legacy MemoryManager ───────────────────────────────────────────────────
+
+class MemoryManager {
   async getAllMemories(): Promise<Memory[]> {
-    try {
-      const stored = localStorage.getItem(this.STORAGE_KEY);
-      if (stored) {
-        return JSON.parse(stored);
-      }
-    } catch {
-      /* ignore */
-    }
-    return [];
+    await unifiedMemory.initialize();
+    const all = await unifiedMemory.list();
+    return all.map(toLegacyMemory);
   }
 
-  async addMemory(memoryData: {
+  async addMemory(data: {
     type?: MemoryType;
     key: string;
     value: string;
@@ -44,60 +100,37 @@ class MemoryManager {
     confidence?: number;
     source?: "user" | "assistant" | "inferred";
   }): Promise<Memory> {
-    const memories = await this.getAllMemories();
-    const source = memoryData.source || "user";
-    const confidence = memoryData.confidence ?? (source === "inferred" ? 0.7 : 1.0);
+    await unifiedMemory.initialize();
+    const category = data.type ? legacyTypeToCategory(data.type) : "semantic";
+    
+    const result = await unifiedMemory.save({
+      content: data.value,
+      category,
+      importance: data.importance,
+      confidence: data.confidence,
+      source: data.source || "user",
+      tags: [data.key],
+    });
 
-    const newMemory: Memory = {
-      id: "mem_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6),
-      type: memoryData.type || "FACT",
-      key: memoryData.key,
-      value: memoryData.value,
-      importance: memoryData.importance ?? 0.8,
-      confidence,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      lastAccessedAt: Date.now(),
-      source,
-    };
-
-    memories.unshift(newMemory);
-    this.saveAll(memories);
-    return newMemory;
+    return toLegacyMemory(result);
   }
 
   async updateMemory(id: string, updates: Partial<Memory>): Promise<Memory | null> {
-    const memories = await this.getAllMemories();
-    const idx = memories.findIndex((m) => m.id === id);
-    if (idx === -1) return null;
-
-    memories[idx] = {
-      ...memories[idx],
-      ...updates,
-      updatedAt: Date.now(),
-    };
-
-    this.saveAll(memories);
-    return memories[idx];
+    await unifiedMemory.initialize();
+    const result = await unifiedMemory.update(id, {
+      content: updates.value,
+      importance: updates.importance,
+      confidence: updates.confidence,
+    });
+    return result ? toLegacyMemory(result) : null;
   }
 
   async deleteMemory(id: string): Promise<boolean> {
-    const memories = await this.getAllMemories();
-    const filtered = memories.filter((m) => m.id !== id);
-    this.saveAll(filtered);
-    return filtered.length < memories.length;
+    return unifiedMemory.delete(id);
   }
 
   async clearAll(): Promise<void> {
-    this.saveAll([]);
-  }
-
-  private saveAll(memories: Memory[]) {
-    try {
-      localStorage.setItem(this.STORAGE_KEY, JSON.stringify(memories));
-    } catch {
-      /* ignore */
-    }
+    return unifiedMemory.clear();
   }
 }
 

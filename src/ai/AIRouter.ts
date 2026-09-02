@@ -8,6 +8,7 @@ import { localAIService, type ChatMessage as LocalChatMessage } from "./local/Lo
 import { getAIMode, type AIMode } from "./local/LocalAISettings";
 import { callGemini, streamGeminiResponse, classifyTask } from "@/lib/gemini";
 import { MemoryRetriever } from "@/services/memory/memory-retriever";
+import { unifiedMemory } from "@/services/memory/MemoryService";
 
 export type AIRouterSource = "local" | "gemini";
 
@@ -144,12 +145,19 @@ async function routeToLocal(
  */
 async function buildMemoryAwarePrompt(userInput: string): Promise<string> {
   const BASE =
-    "You are Nova, a voice-first AI personal operating system. You are helpful, intelligent, and friendly. You help with daily tasks, answer questions, manage calendars, write emails, control smart home devices, and more. Keep responses concise and conversational.\n\nIMPORTANT RULES:\n- When the user asks you to remember something, confirm it was saved and do not pretend you can remember without the memory tool.\n- When asked to create a task, calendar event, or send an email, confirm the action was completed by the system — do NOT fabricate results.\n- Use the user's name and preferences when available.\n- Be direct: give the answer, then optionally ask if they want more detail.";
+    "You are Nova, a voice-first AI personal operating system. You are helpful, intelligent, and friendly. You help with daily tasks, answer questions, manage calendars, write emails, control smart home devices, and more. Keep responses concise and conversational.\n\nIMPORTANT RULES:\n- When the user asks you to remember something, confirm it was saved and do not pretend you can remember without the memory tool.\n- When asked to create a task, calendar event, or send an email, confirm the action was completed by the system — do NOT fabricate results.\n- Use the user's name and preferences when available.\n- Be direct: give the answer, then optionally ask if they want more detail.\n- If the user corrects something, update your understanding and acknowledge the correction.";
 
   try {
-    const memories = await MemoryRetriever.retrieveRelevant(userInput, 5);
-    if (memories.length === 0) return BASE;
-    const memoryContext = MemoryRetriever.formatMemoriesForContext(memories);
+    await unifiedMemory.initialize();
+    
+    // Use hybrid retrieval: context-aware recall for relevant memories + key preferences
+    const contextMemories = await unifiedMemory.recall({
+      currentMessage: userInput,
+      maxMemories: 6,
+    });
+    
+    if (contextMemories.length === 0) return BASE;
+    const memoryContext = unifiedMemory.formatForContext(contextMemories);
     return `${BASE}\n\nStored User Context (use to personalize responses):\n${memoryContext}`;
   } catch {
     return BASE;
