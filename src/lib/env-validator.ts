@@ -1,7 +1,7 @@
 /**
  * Nova AI OS — Environment Validator
  * Validates required environment variables at startup.
- * Shows a blocking error screen if critical keys are missing.
+ * Shows warnings for missing keys instead of blocking the app.
  */
 
 export interface EnvValidationResult {
@@ -22,11 +22,6 @@ const RECOMMENDED_KEYS = [
   "VITE_FIREBASE_STORAGE_BUCKET",
   "VITE_FIREBASE_MESSAGING_SENDER_ID",
   "VITE_FIREBASE_APP_ID",
-] as const;
-
-const OPTIONAL_KEYS = [
-  "VITE_ELEVENLABS_API_KEY",
-  "VITE_DEEPGRAM_API_KEY",
 ] as const;
 
 /**
@@ -78,7 +73,7 @@ export function getEnvErrorMessage(result: EnvValidationResult): string {
   const lines = [
     "Nova AI OS is missing required configuration.",
     "",
-    "Please add these environment variables in Settings → Environment:",
+    "Please add these environment variables:",
     "",
   ];
 
@@ -95,6 +90,15 @@ export function getEnvErrorMessage(result: EnvValidationResult): string {
   lines.push("Get Firebase credentials from: https://console.firebase.google.com");
 
   return lines.join("\n");
+}
+
+/**
+ * Check if Firebase is configured.
+ */
+export function isFirebaseConfigured(): boolean {
+  return hasRealValue("VITE_FIREBASE_API_KEY") && 
+         hasRealValue("VITE_FIREBASE_AUTH_DOMAIN") && 
+         hasRealValue("VITE_FIREBASE_PROJECT_ID");
 }
 
 /**
