@@ -38,6 +38,8 @@ const MemorySearchControlPage = lazy(() => import("./pages/MemorySearchControl")
 const WorkspacePage = lazy(() => import("./pages/WorkspacePage"));
 const ObservabilityDashboard = lazy(() => import("./pages/ObservabilityPage"));
 const PersonalizationSettings = lazy(() => import("./pages/PersonalizationPage"));
+const ImportExportPage = lazy(() => import("./pages/ImportExportPage"));
+const CalendarIntelligencePage = lazy(() => import("./pages/CalendarIntelligence"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
@@ -156,6 +158,8 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/workspace" element={<ProtectedRoute><WorkspacePage /></ProtectedRoute>} />
             <Route path="/observability" element={<ProtectedRoute><ObservabilityDashboard /></ProtectedRoute>} />
             <Route path="/personalization" element={<ProtectedRoute><PersonalizationSettings /></ProtectedRoute>} />
+            <Route path="/import-export" element={<ProtectedRoute><ImportExportPage /></ProtectedRoute>} />
+            <Route path="/calendar-intel" element={<ProtectedRoute><CalendarIntelligencePage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -26,6 +26,8 @@ import {
   FolderOpen,
   BarChart3,
   UserCog,
+  Download,
+  CalendarRange,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
@@ -55,6 +57,8 @@ export function Sidebar() {
     { to: "/memory-search", icon: Search, label: "Memory Search" },
     { to: "/workspace", icon: FolderOpen, label: "Workspaces" },
     { to: "/observability", icon: BarChart3, label: "Observability" },
+    { to: "/import-export", icon: Download, label: "Import / Export" },
+    { to: "/calendar-intel", icon: CalendarRange, label: "Calendar Intel" },
     { to: "/security", icon: Shield, label: "Security" },
     { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },
     { to: "/personalization", icon: UserCog, label: "Personalization" },
