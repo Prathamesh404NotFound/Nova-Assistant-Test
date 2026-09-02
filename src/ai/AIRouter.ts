@@ -157,7 +157,7 @@ async function routeToGemini(
           messages: [{ role: "user", parts: [{ text: input }] }],
           apiKey: geminiKey,
           systemInstruction:
-            "You are Nova, a voice-first AI personal operating system. Provide direct, intelligent, and concise responses.",
+            "You are Nova. Reply with ONLY the essential answer. No explanations, no filler, no preamble. Just the fact or action requested. Example: Q: Capital of France? A: Paris",
           onChunk: (chunk) => {
             accumulated += chunk;
             options.onChunk?.(accumulated);
