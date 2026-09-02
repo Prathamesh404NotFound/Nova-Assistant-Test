@@ -38,8 +38,8 @@ export function useWakeWord({ onWake, enabled = true }: UseWakeWordOptions = {})
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const transcript = event.results[i][0].transcript.toLowerCase().trim();
-        // Detect "hey nova" or "heowa" wake words
-        if (/\bhey\s*nova\b/i.test(transcript) || /\bheowa\b/i.test(transcript)) {
+        // Detect "Hey Nova" wake word
+        if (/\bhey\s*nova\b/i.test(transcript)) {
           onWakeRef.current?.();
           return;
         }

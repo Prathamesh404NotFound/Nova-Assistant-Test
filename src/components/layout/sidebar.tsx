@@ -16,6 +16,7 @@ import {
   Zap,
   Users,
   Bot,
+  Puzzle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
@@ -38,6 +39,7 @@ const navItems = [
   { to: "/automations", icon: Zap, label: "Automations" },
   { to: "/activity", icon: Activity, label: "Activity" },
   { to: "/security", icon: Shield, label: "Security" },
+  { to: "/plugins", icon: Puzzle, label: "Plugins" },
   { to: "/settings", icon: Settings, label: "Settings" },
 ];
 

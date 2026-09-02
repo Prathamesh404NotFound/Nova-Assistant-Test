@@ -30,6 +30,7 @@ const FilesPage = lazy(() => import("./pages/FilesPage"));
 const AutomationsPage = lazy(() => import("./pages/Automations"));
 const ActivityPage = lazy(() => import("./pages/Activity"));
 const SecurityPage = lazy(() => import("./pages/Security"));
+const PluginsPage = lazy(() => import("./pages/Plugins"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
@@ -140,6 +141,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/automations" element={<ProtectedRoute><AutomationsPage /></ProtectedRoute>} />
             <Route path="/activity" element={<ProtectedRoute><ActivityPage /></ProtectedRoute>} />
             <Route path="/security" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
+            <Route path="/plugins" element={<ProtectedRoute><PluginsPage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

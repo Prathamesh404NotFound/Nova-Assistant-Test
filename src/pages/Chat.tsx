@@ -11,6 +11,7 @@ import { useNavigate } from "react-router";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
 import ReactMarkdown from "react-markdown";
+import { Collaboration } from "@/components/Collaboration";
 import {
   Send,
   Mic,
@@ -202,6 +203,7 @@ export default function Chat() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Collaboration conversationId={activeConvId || undefined} messages={messages} />
           {isStreaming && (
             <Button
               variant="ghost"
