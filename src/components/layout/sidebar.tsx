@@ -31,6 +31,9 @@ import {
   Users,
   Mic2,
   BookOpen,
+  Terminal,
+  Home as HomeIcon,
+  Zap as ZapIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
@@ -64,6 +67,9 @@ export function Sidebar() {
     { to: "/calendar-intel", icon: CalendarRange, label: "Calendar Intel" },
     { to: "/voice-experience", icon: Mic2, label: "Voice Experience" },
     { to: "/browser-research", icon: BookOpen, label: "Research Mode" },
+    { to: "/coding-workspace", icon: Terminal, label: "Code Workspace" },
+    { to: "/smart-home-scenes", icon: HomeIcon, label: "Smart Scenes" },
+    { to: "/automation-builder", icon: ZapIcon, label: "Auto Builder" },
     { to: "/admin-team", icon: Users, label: "Admin & Team" },
     { to: "/security", icon: Shield, label: "Security" },
     { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },

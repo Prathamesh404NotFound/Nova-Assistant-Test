@@ -43,6 +43,9 @@ const CalendarIntelligencePage = lazy(() => import("./pages/CalendarIntelligence
 const AdminTeamPage = lazy(() => import("./pages/AdminTeamPage"));
 const VoiceExperiencePage = lazy(() => import("./pages/VoiceExperiencePage"));
 const BrowserResearchPage = lazy(() => import("./pages/BrowserResearchPage"));
+const CodingWorkspacePage = lazy(() => import("./pages/CodingWorkspace"));
+const SmartHomeScenesPage = lazy(() => import("./pages/SmartHomeScenes"));
+const AutomationBuilderPage = lazy(() => import("./pages/AutomationBuilder"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteLoading() {
@@ -166,6 +169,9 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/admin-team" element={<ProtectedRoute><AdminTeamPage /></ProtectedRoute>} />
             <Route path="/voice-experience" element={<ProtectedRoute><VoiceExperiencePage /></ProtectedRoute>} />
             <Route path="/browser-research" element={<ProtectedRoute><BrowserResearchPage /></ProtectedRoute>} />
+            <Route path="/coding-workspace" element={<ProtectedRoute><CodingWorkspacePage /></ProtectedRoute>} />
+            <Route path="/smart-home-scenes" element={<ProtectedRoute><SmartHomeScenesPage /></ProtectedRoute>} />
+            <Route path="/automation-builder" element={<ProtectedRoute><AutomationBuilderPage /></ProtectedRoute>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
