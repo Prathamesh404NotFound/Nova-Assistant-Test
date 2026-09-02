@@ -146,9 +146,9 @@ export class IntentRouter {
     }
 
     // 7. TASK CREATION
-    if (/\b(create task|add task|new task|remind me to|create a task|add a task|make a task)\b/i.test(lower)) {
+    if (/\b(create task|add task|new task|remind me to|create a task|add a task|make a task|set a reminder|set reminder)\b/i.test(lower)) {
       const taskTitle = raw.replace(
-        /^.*?(create task|add task|new task|remind me to|create a task|add a task|make a task)\s*(to|for)?\s*/i,
+        /^.*?(create task|add task|new task|remind me to|create a task|add a task|make a task|set a? ?reminder)\s*(to|for)?\s*/i,
         ""
       );
       return {
@@ -159,6 +159,23 @@ export class IntentRouter {
         requiresTool: true,
         extractedData: { title: taskTitle || "New Task" },
         entities: { title: taskTitle || "New Task", action: "create" },
+      };
+    }
+
+    // 7b. TASK COMPLETION
+    if (/\b(complete task|finish task|mark done|task done|done with|finished with|mark as done|mark complete)\b/i.test(lower)) {
+      const taskRef = raw.replace(
+        /^.*?(complete task|finish task|mark done|task done|done with|finished with|mark as done|mark complete)\s*/i,
+        ""
+      );
+      return {
+        intent: "TASK_UPDATE",
+        category: "TASK_MANAGEMENT",
+        confidence: 0.92,
+        requiresGemini: false,
+        requiresTool: true,
+        extractedData: { title: taskRef || "", action: "complete" },
+        entities: { title: taskRef, action: "complete" },
       };
     }
 
@@ -176,7 +193,7 @@ export class IntentRouter {
 
     // 9. CALCULATIONS & BASIC MATH
     if (
-      /^(\d+[\s\+\-\*\/\%\^]\d+|\d+\s*(plus|minus|times|divided by|multiplied by)\s*\d+|what is \d+[\s\+\-\*\/])/i.test(
+      /^(\d+[\s\+\-\*\/\%\^]\d+|\d+\s*(plus|minus|times|divided by|multiplied by)\s*\d+|what is \d+[\s\+\-\*\/]|calculate|compute)/i.test(
         lower
       )
     ) {
@@ -187,6 +204,18 @@ export class IntentRouter {
         requiresGemini: false,
         requiresTool: true,
         entities: { action: "calculate", content: raw },
+      };
+    }
+
+    // 9b. TYPING / TEXT SPEED
+    if (/\b(what(?:'s| is) my (?:typing )?speed|words per minute|wpm|typing speed|how fast do i type)\b/i.test(lower)) {
+      return {
+        intent: "TIME",
+        category: "UTILITY",
+        confidence: 0.9,
+        requiresGemini: false,
+        requiresTool: false,
+        entities: { action: "typing_speed" },
       };
     }
 
@@ -237,7 +266,19 @@ export class IntentRouter {
       };
     }
 
-    // 13. CONVERSATIONAL FALLBACK (Short text without keywords)
+    // 13. COMMAND-LIKE PHRASES (short imperative that maps to a tool)
+    if (/\b(switch to|change to|set mode|ai mode|local mode|gemini mode|auto mode)\b/i.test(lower)) {
+      return {
+        intent: "NAVIGATION",
+        category: "NAVIGATION",
+        confidence: 0.88,
+        requiresGemini: false,
+        requiresTool: true,
+        entities: { target: lower.includes("local") ? "settings" : lower.includes("gemini") ? "settings" : "settings", action: "mode_switch" },
+      };
+    }
+
+    // 14. CONVERSATIONAL FALLBACK (Short text without keywords)
     if (lower.split(/\s+/).length <= 6) {
       return {
         intent: "CONVERSATION",

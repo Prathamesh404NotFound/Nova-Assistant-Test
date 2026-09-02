@@ -9,7 +9,17 @@ import type { NovaTool, ToolContext, ToolResult } from "./types";
 import { memoryService } from "../memory/MemoryService";
 import { calendarService } from "../calendar/CalendarService";
 import { taskService } from "../tasks/TaskService";
-import { logActivity } from "@/lib/local-store";
+import {
+  logActivity,
+  addEmailDraft,
+  getEmailDrafts,
+  updateEmailDraft,
+  deleteEmailDraft,
+  getFiles,
+  deleteFile,
+  getSmartDevices,
+  updateSmartDevice,
+} from "@/lib/local-store";
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
 
@@ -315,6 +325,210 @@ const taskDeleteTool: NovaTool = {
   },
 };
 
+// ─── Email Tools ────────────────────────────────────────────────────────────
+
+const emailDraftTool: NovaTool = {
+  name: "email.draft",
+  description: "Draft an email to a recipient",
+  category: "email",
+  inputSchema: {
+    properties: {
+      to: { type: "string", description: "Recipient email address", required: true },
+      subject: { type: "string", description: "Email subject", required: true },
+      body: { type: "string", description: "Email body content" },
+    },
+    required: ["to", "subject"],
+  },
+  riskLevel: "low",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const draft = addEmailDraft({
+      to: args.to as string,
+      subject: args.subject as string,
+      body: (args.body as string) || "",
+      status: "draft",
+    });
+    logActivity("email", `Drafted email to ${args.to}: ${args.subject}`, "mail");
+    return ok("email.draft", draft, `Email drafted to ${args.to}`);
+  },
+};
+
+const emailListTool: NovaTool = {
+  name: "email.list",
+  description: "List all email drafts and sent emails",
+  category: "email",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const drafts = getEmailDrafts();
+    return ok("email.list", drafts, `Found ${drafts.length} emails`);
+  },
+};
+
+const emailSearchTool: NovaTool = {
+  name: "email.search",
+  description: "Search emails by subject or recipient",
+  category: "email",
+  inputSchema: {
+    properties: {
+      query: { type: "string", description: "Search query", required: true },
+    },
+    required: ["query"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const query = (args.query as string).toLowerCase();
+    const drafts = getEmailDrafts().filter(
+      (d) => d.subject.toLowerCase().includes(query) || d.to.toLowerCase().includes(query)
+    );
+    return ok("email.search", drafts, `Found ${drafts.length} matching emails`);
+  },
+};
+
+const emailDeleteTool: NovaTool = {
+  name: "email.delete",
+  description: "Delete an email draft",
+  category: "email",
+  inputSchema: {
+    properties: {
+      id: { type: "string", description: "Email id to delete", required: true },
+    },
+    required: ["id"],
+  },
+  riskLevel: "medium",
+  confirmationRequired: true,
+  execute: async (args) => {
+    deleteEmailDraft(args.id as string);
+    logActivity("email", `Deleted email: ${args.id}`, "trash");
+    return ok("email.delete", null, "Email deleted");
+  },
+};
+
+// ─── File Tools ──────────────────────────────────────────────────────────────
+
+const fileListTool: NovaTool = {
+  name: "file.list",
+  description: "List all stored files",
+  category: "files",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const files = getFiles();
+    return ok("file.list", files, `Found ${files.length} files`);
+  },
+};
+
+const fileSearchTool: NovaTool = {
+  name: "file.search",
+  description: "Search files by name",
+  category: "files",
+  inputSchema: {
+    properties: {
+      query: { type: "string", description: "Search query", required: true },
+    },
+    required: ["query"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const query = (args.query as string).toLowerCase();
+    const files = getFiles().filter((f) => f.name.toLowerCase().includes(query));
+    return ok("file.search", files, `Found ${files.length} matching files`);
+  },
+};
+
+const fileDeleteTool: NovaTool = {
+  name: "file.delete",
+  description: "Delete a file",
+  category: "files",
+  inputSchema: {
+    properties: {
+      id: { type: "string", description: "File id to delete", required: true },
+    },
+    required: ["id"],
+  },
+  riskLevel: "medium",
+  confirmationRequired: true,
+  execute: async (args) => {
+    deleteFile(args.id as string);
+    logActivity("files", `Deleted file: ${args.id}`, "trash");
+    return ok("file.delete", null, "File deleted");
+  },
+};
+
+// ─── Device Tools ────────────────────────────────────────────────────────────
+
+const deviceListTool: NovaTool = {
+  name: "device.list",
+  description: "List all smart home devices",
+  category: "device",
+  inputSchema: { properties: {} },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async () => {
+    const devices = getSmartDevices();
+    return ok("device.list", devices, `Found ${devices.length} devices`);
+  },
+};
+
+const deviceToggleTool: NovaTool = {
+  name: "device.toggle",
+  description: "Toggle a smart device on/off",
+  category: "device",
+  inputSchema: {
+    properties: {
+      deviceId: { type: "string", description: "Device id to toggle" },
+      name: { type: "string", description: "Device name (fuzzy match if no id)" },
+      state: { type: "string", description: "Desired state: on or off" },
+    },
+  },
+  riskLevel: "low",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const devices = getSmartDevices();
+    const target = args.deviceId
+      ? devices.find((d) => d.id === args.deviceId)
+      : devices.find((d) => d.name.toLowerCase().includes((args.name as string || "").toLowerCase()));
+    if (!target) {
+      return fail("device.toggle", "NOT_FOUND", `Device not found: ${args.name || args.deviceId}`);
+    }
+    const desiredOn = args.state === "on" ? true : args.state === "off" ? false : !target.isOn;
+    updateSmartDevice(target.id, { isOn: desiredOn });
+    logActivity("device", `${desiredOn ? "Turned on" : "Turned off"} ${target.name}`, "home");
+    return ok("device.toggle", { ...target, isOn: desiredOn }, `${target.name} turned ${desiredOn ? "on" : "off"}`);
+  },
+};
+
+const deviceAdjustTool: NovaTool = {
+  name: "device.adjust",
+  description: "Adjust a device setting (brightness, temperature, etc.)",
+  category: "device",
+  inputSchema: {
+    properties: {
+      deviceId: { type: "string", description: "Device id" },
+      name: { type: "string", description: "Device name (fuzzy match if no id)" },
+      value: { type: "number", description: "New value (brightness 0-100, temp, etc.)" },
+    },
+  },
+  riskLevel: "low",
+  confirmationRequired: false,
+  execute: async (args) => {
+    const devices = getSmartDevices();
+    const target = args.deviceId
+      ? devices.find((d) => d.id === args.deviceId)
+      : devices.find((d) => d.name.toLowerCase().includes((args.name as string || "").toLowerCase()));
+    if (!target) {
+      return fail("device.adjust", "NOT_FOUND", `Device not found: ${args.name || args.deviceId}`);
+    }
+    updateSmartDevice(target.id, { value: args.value as number });
+    logActivity("device", `Adjusted ${target.name} to ${args.value}`, "home");
+    return ok("device.adjust", { ...target, value: args.value }, `${target.name} set to ${args.value}`);
+  },
+};
+
 // ─── Navigation Tool ─────────────────────────────────────────────────────────
 
 const navigationGoTool: NovaTool = {
@@ -369,6 +583,22 @@ export function registerAllTools(): void {
 
   // Navigation
   toolRegistry.register(navigationGoTool);
+
+  // Email
+  toolRegistry.register(emailDraftTool);
+  toolRegistry.register(emailListTool);
+  toolRegistry.register(emailSearchTool);
+  toolRegistry.register(emailDeleteTool);
+
+  // Files
+  toolRegistry.register(fileListTool);
+  toolRegistry.register(fileSearchTool);
+  toolRegistry.register(fileDeleteTool);
+
+  // Device
+  toolRegistry.register(deviceListTool);
+  toolRegistry.register(deviceToggleTool);
+  toolRegistry.register(deviceAdjustTool);
 
   console.log(`[ToolRegistry] Registered ${toolRegistry.list().length} tools`);
 }

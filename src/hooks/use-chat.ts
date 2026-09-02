@@ -34,11 +34,12 @@ export type ChatStatus = "idle" | "streaming" | "error";
 
 interface UseChatOptions {
   apiKey?: string;
+  userId?: string;
   onNavigate?: (path: string) => void;
   onSpeak?: (text: string) => void;
 }
 
-export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {}) {
+export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseChatOptions = {}) {
   // Core state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<ChatStatus>("idle");
@@ -156,7 +157,7 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
           const agentResult = await agentOrchestrator.process({
             text: content.trim(),
             source: "chat",
-            context: { userId: "" },
+            context: { userId },
           });
 
           if (agentResult.response) {
@@ -298,10 +299,7 @@ export function useChat({ apiKey = "", onNavigate, onSpeak }: UseChatOptions = {
         if (activeRequestRef.current === requestId) {
           setStatus("idle");
         }
-      }
-    },
-    [apiKey, isStreaming, activeConvId, messages, onNavigate, onSpeak]
-  );
+      }  }, [apiKey, userId, isStreaming, activeConvId, messages, onNavigate, onSpeak]);
 
   /**
    * Stop the current generation.

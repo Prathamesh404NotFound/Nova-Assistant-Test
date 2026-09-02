@@ -7,6 +7,7 @@ import { NovaAvatar, type AvatarState } from "@/components/nova/avatar";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
 import { useIndicTTS } from "@/hooks/use-indic-tts";
 import { useChat } from "@/hooks/use-chat";
+import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
@@ -33,6 +34,8 @@ import {
 } from "lucide-react";
 
 export default function Chat() {
+  const { user } = useAuth();
+  const userId = user?.uid ?? "";
   const [input, setInput] = useState("");
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [geminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "");
@@ -70,6 +73,7 @@ export default function Chat() {
     retryLastMessage,
   } = useChat({
     apiKey: geminiKey,
+    userId,
     onNavigate: handleNavigate,
     onSpeak: (text) => {
       indicSpeak(text);

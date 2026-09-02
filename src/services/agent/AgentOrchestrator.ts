@@ -12,6 +12,7 @@
 import { toolRegistry } from "./ToolRegistry";
 import { toolExecutor } from "./ToolExecutor";
 import { registerAllTools } from "./register-tools";
+import { callGemini } from "@/lib/gemini";
 import type {
   AgentInput,
   AgentResult,
@@ -140,12 +141,79 @@ const INTENT_PATTERNS: IntentPattern[] = [
         activity: "/activity",
         voice: "/voice-experience",
         coding: "/coding-workspace",
+        security: "/security",
+        plugins: "/plugins",
+        workspace: "/workspace",
+        observability: "/observability",
+        personalization: "/personalization",
+        import: "/import-export",
+        export: "/import-export",
       };
       for (const [key, path] of Object.entries(routes)) {
         if (page.includes(key)) return { path };
       }
       return { path: `/${page.replace(/\s+/g, "-")}` };
     },
+  },
+
+  // Device operations
+  {
+    pattern: /^(?:turn on|switch on|enable)\s+(?:the\s+)?(.+)/i,
+    tool: "device.toggle",
+    extractArgs: (m) => ({ name: m[1].trim(), state: "on" }),
+  },
+  {
+    pattern: /^(?:turn off|switch off|disable)\s+(?:the\s+)?(.+)/i,
+    tool: "device.toggle",
+    extractArgs: (m) => ({ name: m[1].trim(), state: "off" }),
+  },
+  {
+    pattern: /^(?:toggle|switch)\s+(?:the\s+)?(.+)/i,
+    tool: "device.toggle",
+    extractArgs: (m) => ({ name: m[1].trim() }),
+  },
+  {
+    pattern: /^(?:set|adjust|change)\s+(?:the\s+)?(.+?)\s+(?:to|at)\s+(\d+)/i,
+    tool: "device.adjust",
+    extractArgs: (m) => ({ name: m[1].trim(), value: parseInt(m[2]) }),
+  },
+  {
+    pattern: /^(?:what(?:'s| is) the|show)\s+(?:status of |list )?(?:my )?(?:smart )?devices?/i,
+    tool: "device.list",
+    extractArgs: () => ({}),
+  },
+
+  // Email operations
+  {
+    pattern: /^(?:send|draft|write|compose)\s+(?:an\s+|a\s+)?(?:email|mail)\s+(?:to\s+)?(.+?)(?:\s+with subject\s+(.+?))?(?:\s+(?:about|saying|content)\s+(.+))?$/i,
+    tool: "email.draft",
+    extractArgs: (m) => ({
+      to: m[1]?.trim() || "",
+      subject: m[2]?.trim() || "",
+      body: m[3]?.trim() || "",
+    }),
+  },
+  {
+    pattern: /^(?:show|list|what are|my)\s+(?:my\s+)?(?:email|mail|draft)s?/i,
+    tool: "email.list",
+    extractArgs: () => ({}),
+  },
+  {
+    pattern: /^(?:search|find)\s+(?:emails?|mail|drafts?)\s+(?:for|about)?\s*(.+)/i,
+    tool: "email.search",
+    extractArgs: (m) => ({ query: m[1] }),
+  },
+
+  // File operations
+  {
+    pattern: /^(?:show|list|what are|my)\s+(?:my\s+)?files?/i,
+    tool: "file.list",
+    extractArgs: () => ({}),
+  },
+  {
+    pattern: /^(?:search|find)\s+(?:my\s+)?files?\s+(?:for|about)?\s*(.+)/i,
+    tool: "file.search",
+    extractArgs: (m) => ({ query: m[1] }),
   },
 
   // Utility
@@ -165,6 +233,58 @@ const INTENT_PATTERNS: IntentPattern[] = [
 
 const HIGH_CONFIDENCE = 0.85;
 const MEDIUM_CONFIDENCE = 0.6;
+
+// ─── AI Tool Planner ────────────────────────────────────────────────────────
+
+interface PlannedTool {
+  name: string;
+  args: Record<string, unknown>;
+  reason: string;
+}
+
+/**
+ * Ask Gemini to plan which tools to execute for a complex user request.
+ * Returns an ordered list of tool calls with their arguments.
+ */
+async function planToolsWithAI(
+  userInput: string,
+  geminiKey: string,
+  toolList: Array<{ name: string; description: string; parameters: string }>
+): Promise<PlannedTool[]> {
+  const toolDescriptions = toolList
+    .map((t) => `- ${t.name}: ${t.description} (params: ${t.parameters})`)
+    .join("\n");
+
+  const prompt = `You are Nova's tool planner. Given a user request, decide which tools to call.
+
+Available tools:
+${toolDescriptions}
+
+User request: "${userInput}"
+
+Return ONLY a JSON array of tool calls. Each tool call is an object with:
+- name: tool name
+- args: arguments object
+- reason: brief reason
+
+If no tools are needed, return an empty array [].
+Do NOT include any explanation outside the JSON array.`;
+
+  try {
+    const response = await callGemini(geminiKey, prompt, undefined, "reasoning");
+    // Extract JSON from response
+    const jsonMatch = response.match(/\[[\s\S]*\]/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((t: any) => t.name && typeof t.name === "string");
+      }
+    }
+  } catch {
+    // AI planning failed — return empty
+  }
+  return [];
+}
 
 // ─── Agent Orchestrator ──────────────────────────────────────────────────────
 
@@ -263,12 +383,18 @@ class AgentOrchestratorImpl {
     const calendarKeywords = ["calendar", "event", "meeting", "schedule", "appointment"];
     const taskKeywords = ["task", "todo", "to-do", "reminder", "remind"];
     const navKeywords = ["open", "go to", "navigate", "show page"];
+    const emailKeywords = ["email", "mail", "draft", "compose", "send"];
+    const fileKeywords = ["file", "files", "document"];
+    const deviceKeywords = ["light", "lights", "thermostat", "lock", "camera", "device", "toggle", "turn on", "turn off"];
 
     const allKeywords = [
       ...memoryKeywords,
       ...calendarKeywords,
       ...taskKeywords,
       ...navKeywords,
+      ...emailKeywords,
+      ...fileKeywords,
+      ...deviceKeywords,
     ];
 
     if (allKeywords.some((k) => lower.includes(k))) {
@@ -359,21 +485,211 @@ class AgentOrchestratorImpl {
     };
   }
 
-  /** Route to AI model for complex requests (tool planning). */
+  /**
+   * Route to AI model for complex requests.
+   * Implements the full TOOL LOOP: plan → execute → observe → decide → loop or finish.
+   */
   private async routeToAI(
     input: AgentInput,
     context: ToolContext,
     startMs: number
   ): Promise<AgentResult> {
-    // For now, return empty response so the existing AI pipeline handles it
-    // In future: call Gemini with tool declarations, parse function calls,
-    // execute via ToolExecutor, feed results back, generate final response
+    const actionsExecuted: Array<{ tool: string; success: boolean; result?: ToolResult }> = [];
+    const lower = input.text.toLowerCase();
+
+    // ── Phase 1: Deterministic multi-step detection ────────────────────
+    const steps = this.detectMultiStepSteps(lower);
+
+    if (steps.length > 1) {
+      // Execute detected steps sequentially, then observe
+      for (const step of steps) {
+        const tool = toolRegistry.get(step.tool);
+        if (!tool) continue;
+        const args = step.extractArgs(input.text);
+        const result = await toolExecutor.execute(step.tool, args, context, {
+          source: context.source === "voice" ? "voice" : "chat",
+        });
+        actionsExecuted.push({ tool: step.tool, success: result.success, result });
+      }
+
+      const summary = actionsExecuted
+        .map((a) => a.success ? `✓ ${a.result?.message || a.tool}` : `✗ ${a.tool}: ${a.result?.error?.message || "failed"}`)
+        .join("\n");
+
+      return {
+        response: summary,
+        actionsExecuted,
+        route: { route: "AI_TOOL", confidence: 0.7 },
+        durationMs: Date.now() - startMs,
+      };
+    }
+
+    // ── Phase 2: AI-driven tool planning + tool loop ───────────────────
+    return this.toolLoop(input, context, startMs, actionsExecuted);
+  }
+
+  /**
+   * TOOL LOOP: plan tools → execute → observe → decide if more → repeat.
+   * This is the core agent loop matching the architecture diagram.
+   */
+  private async toolLoop(
+    input: AgentInput,
+    context: ToolContext,
+    startMs: number,
+    initialActions: Array<{ tool: string; success: boolean; result?: ToolResult }>
+  ): Promise<AgentResult> {
+    const actionsExecuted = [...initialActions];
+    const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "";
+    const MAX_LOOP_STEPS = 3;
+
+    // Get available tools for the planner
+    const availableTools = toolRegistry.listAvailable().map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: JSON.stringify(t.inputSchema.properties),
+    }));
+
+    // Loop: plan → execute → observe → decide
+    for (let step = 0; step < MAX_LOOP_STEPS; step++) {
+      // PLAN: ask AI which tools to call
+      const tools = await planToolsWithAI(input.text, geminiKey, availableTools);
+
+      // No tools planned — break and let AI generate a text response
+      if (tools.length === 0) break;
+
+      // EXECUTE: run each planned tool
+      let allSucceeded = true;
+      for (const planned of tools) {
+        const tool = toolRegistry.get(planned.name);
+        if (!tool) continue;
+        const result = await toolExecutor.execute(planned.name, planned.args, context, {
+          source: context.source === "voice" ? "voice" : "chat",
+        });
+        actionsExecuted.push({ tool: planned.name, success: result.success, result });
+        if (!result.success) allSucceeded = false;
+      }
+
+      // OBSERVE & DECIDE: if all tools succeeded, check if follow-up is needed
+      if (allSucceeded && actionsExecuted.length > 0) {
+        const followUp = await this.observeAndDecide(
+          input.text,
+          actionsExecuted,
+          geminiKey
+        );
+        if (followUp.length > 0) {
+          // More actions needed — loop continues
+          for (const planned of followUp) {
+            const tool = toolRegistry.get(planned.name);
+            if (!tool) continue;
+            const result = await toolExecutor.execute(planned.name, planned.args, context, {
+              source: context.source === "voice" ? "voice" : "chat",
+            });
+            actionsExecuted.push({ tool: planned.name, success: result.success, result });
+          }
+        }
+      }
+
+      // After first execution cycle, break
+      break;
+    }
+
+    // Build response from all executed actions
+    if (actionsExecuted.length > 0) {
+      const summary = actionsExecuted
+        .map((a) => a.success ? `✓ ${a.result?.message || a.tool}` : `✗ ${a.tool}: ${a.result?.error?.message || "failed"}`)
+        .join("\n");
+
+      return {
+        response: summary,
+        actionsExecuted,
+        route: { route: "AI_TOOL", confidence: 0.7 },
+        durationMs: Date.now() - startMs,
+      };
+    }
+
+    // No tools executed — defer to AI chat pipeline
     return {
       response: "",
-      actionsExecuted: [],
+      actionsExecuted,
       route: { route: "AI_TOOL", confidence: 0.6 },
       durationMs: Date.now() - startMs,
     };
+  }
+
+  /**
+   * OBSERVE & DECIDE: after tools execute, check if follow-up actions are needed.
+   * For example: after creating a calendar event, check for conflicts.
+   */
+  private async observeAndDecide(
+    userRequest: string,
+    executed: Array<{ tool: string; success: boolean; result?: ToolResult }>,
+    geminiKey: string
+  ): Promise<PlannedTool[]> {
+    if (!geminiKey) return [];
+
+    const executedSummary = executed
+      .map((a) => `${a.tool}: ${a.success ? "success" : "failed"} - ${a.result?.message || ""}`)
+      .join("\n");
+
+    const prompt = `You are Nova's action observer. A user asked: "${userRequest}"
+
+Tools were executed:
+${executedSummary}
+
+Based on the results, does any follow-up action make sense? Consider:
+- If a calendar event was created, should we check for conflicts?
+- If a task was created, should we set a reminder?
+- If an email was drafted, should we also create a calendar event for the meeting?
+
+Return ONLY a JSON array of additional tool calls if follow-up is needed, or [] if done.
+Format: [{"name": "tool.name", "args": {...}, "reason": "..."}]`;
+
+    try {
+      const response = await callGemini(geminiKey, prompt, undefined, "reasoning");
+      const jsonMatch = response.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.filter((t: any) => t.name && typeof t.name === "string");
+        }
+      }
+    } catch {
+      // Observation failed — no follow-up
+    }
+    return [];
+  }
+
+  /**
+   * Detect multi-step deterministic tool calls from the input.
+   * Handles compound commands like "remember X and schedule Y".
+   */
+  private detectMultiStepSteps(lower: string): Array<{ tool: string; extractArgs: (text: string) => Record<string, unknown> }> {
+    const steps: Array<{ tool: string; extractArgs: (text: string) => Record<string, unknown> }> = [];
+
+    // Memory save
+    const memMatch = lower.match(/remember\s+(?:that\s+)?(.+?)(?:\s+and\s+|$)/i);
+    if (memMatch) {
+      steps.push({
+        tool: "memory.save",
+        extractArgs: () => ({ content: memMatch[1].trim() }),
+      });
+    }
+
+    // Calendar create (if part of a compound command)
+    const calMatch = lower.match(/(?:schedule|create|set up?)\s+(?:a\s+|an\s+)?(.+?)(?:\s+(?:on|for)\s+(\w+\s+\d{1,2}))?(?:\s+at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?))?/i);
+    if (calMatch && steps.length > 0) {
+      steps.push({
+        tool: "calendar.create",
+        extractArgs: () => {
+          const title = calMatch[1]?.trim() || "New Event";
+          const date = calMatch[2] || new Date().toISOString().slice(0, 10);
+          const time = calMatch[3] || "09:00";
+          return { title, date, time, duration: 60 };
+        },
+      });
+    }
+
+    return steps;
   }
 
   /** Execute a tool by name (for use by Chat and other consumers). */

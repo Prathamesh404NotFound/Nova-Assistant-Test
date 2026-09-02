@@ -7,6 +7,7 @@
 import { localAIService, type ChatMessage as LocalChatMessage } from "./local/LocalAIService";
 import { getAIMode, type AIMode } from "./local/LocalAISettings";
 import { callGemini, streamGeminiResponse, classifyTask } from "@/lib/gemini";
+import { MemoryRetriever } from "@/services/memory/memory-retriever";
 
 export type AIRouterSource = "local" | "gemini";
 
@@ -136,6 +137,25 @@ async function routeToLocal(
 /**
  * Route to Gemini (existing cloud path).
  */
+/**
+ * Build a memory-aware system prompt for Gemini.
+ * Retrieves relevant stored memories and injects them so Nova
+ * can personalize responses and recall user preferences.
+ */
+async function buildMemoryAwarePrompt(userInput: string): Promise<string> {
+  const BASE =
+    "You are Nova, a voice-first AI personal operating system. You are helpful, intelligent, and friendly. You help with daily tasks, answer questions, manage calendars, write emails, control smart home devices, and more. Keep responses concise and conversational.\n\nIMPORTANT RULES:\n- When the user asks you to remember something, confirm it was saved and do not pretend you can remember without the memory tool.\n- When asked to create a task, calendar event, or send an email, confirm the action was completed by the system — do NOT fabricate results.\n- Use the user's name and preferences when available.\n- Be direct: give the answer, then optionally ask if they want more detail.";
+
+  try {
+    const memories = await MemoryRetriever.retrieveRelevant(userInput, 5);
+    if (memories.length === 0) return BASE;
+    const memoryContext = MemoryRetriever.formatMemoriesForContext(memories);
+    return `${BASE}\n\nStored User Context (use to personalize responses):\n${memoryContext}`;
+  } catch {
+    return BASE;
+  }
+}
+
 async function routeToGemini(
   input: string,
   geminiKey: string,
@@ -149,6 +169,9 @@ async function routeToGemini(
 
   let textResponse = "";
 
+  // Build memory-aware system prompt in parallel with streaming start
+  const systemInstruction = await buildMemoryAwarePrompt(input);
+
   try {
     if (options?.onChunk) {
       let accumulated = "";
@@ -157,8 +180,7 @@ async function routeToGemini(
           messages: [{ role: "user", parts: [{ text: input }] }],
           apiKey: geminiKey,
           taskType: classifyTask(input),
-          systemInstruction:
-            "You are Nova. Reply with ONLY the essential answer. No explanations, no filler, no preamble. Just the fact or action requested. Example: Q: Capital of France? A: Paris",
+          systemInstruction,
           onChunk: (chunk) => {
             accumulated += chunk;
             options.onChunk?.(accumulated);
@@ -169,7 +191,7 @@ async function routeToGemini(
       });
       textResponse = accumulated;
     } else {
-      textResponse = await callGemini(geminiKey, input, undefined, classifyTask(input));
+      textResponse = await callGemini(geminiKey, input, systemInstruction, classifyTask(input));
     }
   } catch (err) {
     textResponse = `Gemini is unavailable right now (${
