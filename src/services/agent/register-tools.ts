@@ -11,6 +11,9 @@ import { calendarService } from "../calendar/CalendarService";
 import { taskService } from "../tasks/TaskService";
 import { computerService } from "../computer/ComputerService";
 import { perceptionService } from "../perception/PerceptionService";
+import { searchService } from "../web/SearchService";
+import { browserService } from "../web/BrowserService";
+import { emailService } from "../email/EmailService";
 import {
   logActivity,
   addEmailDraft,
@@ -1055,6 +1058,340 @@ const clipboardClearTool: NovaTool = {
   },
 };
 
+// ─── Web Search Tools ─────────────────────────────────────────────────────
+
+const searchWebTool: NovaTool = {
+  name: "search.web",
+  description: "Search the web for information. Returns real search results from the internet.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      query: { type: "string", description: "Search query", required: true },
+      maxResults: { type: "number", description: "Maximum results (default 10)" },
+    },
+    required: ["query"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    if (!searchService.isAvailable()) {
+      return fail("search.web", "UNAVAILABLE", "Search service is not available offline.");
+    }
+    try {
+      const response = await searchService.search({
+        query: args.query as string,
+        type: "web",
+        maxResults: (args.maxResults as number) || 10,
+      });
+      logActivity("search", `Searched web: ${args.query}`, "search");
+      return ok("search.web", response, `Found ${response.results.length} results in ${response.searchTimeMs}ms`);
+    } catch (err) {
+      return fail("search.web", "SEARCH_FAILED", err instanceof Error ? err.message : "Search failed");
+    }
+  },
+};
+
+const searchNewsTool: NovaTool = {
+  name: "search.news",
+  description: "Search for recent news articles.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      query: { type: "string", description: "News search query", required: true },
+      maxResults: { type: "number", description: "Maximum results (default 5)" },
+    },
+    required: ["query"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    if (!searchService.isAvailable()) {
+      return fail("search.news", "UNAVAILABLE", "Search service is not available offline.");
+    }
+    try {
+      const response = await searchService.searchNews(
+        args.query as string,
+        (args.maxResults as number) || 5
+      );
+      logActivity("search", `Searched news: ${args.query}`, "newspaper");
+      return ok("search.news", response, `Found ${response.results.length} news articles`);
+    } catch (err) {
+      return fail("search.news", "SEARCH_FAILED", err instanceof Error ? err.message : "News search failed");
+    }
+  },
+};
+
+// ─── Browser Tools ──────────────────────────────────────────────────────────
+
+const browserOpenTool: NovaTool = {
+  name: "browser.open",
+  description: "Open a URL in the browser and return a session.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      url: { type: "string", description: "URL to open", required: true },
+    },
+    required: ["url"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    if (!browserService.isAvailable()) {
+      return fail("browser.open", "UNAVAILABLE", "Browser service is not available offline.");
+    }
+    try {
+      const session = await browserService.open(args.url as string);
+      logActivity("browser", `Opened ${session.currentUrl}`, "globe");
+      return ok("browser.open", session, `Opened ${session.title || session.currentUrl}`);
+    } catch (err) {
+      return fail("browser.open", "OPEN_FAILED", err instanceof Error ? err.message : "Failed to open URL");
+    }
+  },
+};
+
+const browserExtractTool: NovaTool = {
+  name: "browser.extract",
+  description: "Extract text content, links, and metadata from a web page.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      url: { type: "string", description: "URL to extract content from", required: true },
+    },
+    required: ["url"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    if (!browserService.isAvailable()) {
+      return fail("browser.extract", "UNAVAILABLE", "Browser service is not available offline.");
+    }
+    try {
+      const content = await browserService.extract(args.url as string);
+      logActivity("browser", `Extracted content from ${content.title || content.url}`, "file-text");
+      return ok("browser.extract", content, `Extracted ${content.text.length} characters from ${content.title}`);
+    } catch (err) {
+      return fail("browser.extract", "EXTRACT_FAILED", err instanceof Error ? err.message : "Failed to extract content");
+    }
+  },
+};
+
+const browserFindTool: NovaTool = {
+  name: "browser.find",
+  description: "Find UI elements on a page by text, tag, or selector.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      url: { type: "string", description: "Page URL", required: true },
+      selector: { type: "string", description: "Text or selector to find", required: true },
+    },
+    required: ["url", "selector"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    if (!browserService.isAvailable()) {
+      return fail("browser.find", "UNAVAILABLE", "Browser service is not available offline.");
+    }
+    try {
+      const elements = await browserService.find(args.url as string, args.selector as string);
+      return ok("browser.find", elements, `Found ${elements.length} matching elements`);
+    } catch (err) {
+      return fail("browser.find", "FIND_FAILED", err instanceof Error ? err.message : "Failed to find elements");
+    }
+  },
+};
+
+const browserObserveTool: NovaTool = {
+  name: "browser.observe",
+  description: "Get a full observation of a web page including content, links, and UI elements.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      url: { type: "string", description: "URL to observe", required: true },
+    },
+    required: ["url"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    if (!browserService.isAvailable()) {
+      return fail("browser.observe", "UNAVAILABLE", "Browser service is not available offline.");
+    }
+    try {
+      const observation = await browserService.observe(args.url as string);
+      return ok("browser.observe", observation, `Observed: ${observation.title}`);
+    } catch (err) {
+      return fail("browser.observe", "OBSERVE_FAILED", err instanceof Error ? err.message : "Failed to observe page");
+    }
+  },
+};
+
+const browserSummarizeTool: NovaTool = {
+  name: "browser.summarize",
+  description: "Fetch and summarize the content of a web page.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      url: { type: "string", description: "URL to summarize", required: true },
+    },
+    required: ["url"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    if (!browserService.isAvailable()) {
+      return fail("browser.summarize", "UNAVAILABLE", "Browser service is not available offline.");
+    }
+    try {
+      const summary = await browserService.summarize(args.url as string);
+      logActivity("browser", `Summarized ${args.url}`, "align-left");
+      return ok("browser.summarize", { summary, url: args.url }, summary.substring(0, 200) + "...");
+    } catch (err) {
+      return fail("browser.summarize", "SUMMARIZE_FAILED", err instanceof Error ? err.message : "Failed to summarize page");
+    }
+  },
+};
+
+const browserNavigateTool: NovaTool = {
+  name: "browser.navigate",
+  description: "Navigate to a URL within an existing browser session.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      sessionId: { type: "string", description: "Browser session ID", required: true },
+      url: { type: "string", description: "URL to navigate to", required: true },
+    },
+    required: ["sessionId", "url"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    try {
+      const session = await browserService.navigate(args.sessionId as string, args.url as string);
+      return ok("browser.navigate", session, `Navigated to ${session.title || session.currentUrl}`);
+    } catch (err) {
+      return fail("browser.navigate", "NAVIGATE_FAILED", err instanceof Error ? err.message : "Failed to navigate");
+    }
+  },
+};
+
+const browserBackTool: NovaTool = {
+  name: "browser.back",
+  description: "Go back in browser history.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      sessionId: { type: "string", description: "Browser session ID", required: true },
+    },
+    required: ["sessionId"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    try {
+      const session = browserService.back(args.sessionId as string);
+      return ok("browser.back", session, `Back to ${session.currentUrl}`);
+    } catch (err) {
+      return fail("browser.back", "BACK_FAILED", err instanceof Error ? err.message : "Failed to go back");
+    }
+  },
+};
+
+const browserForwardTool: NovaTool = {
+  name: "browser.forward",
+  description: "Go forward in browser history.",
+  category: "browser",
+  inputSchema: {
+    properties: {
+      sessionId: { type: "string", description: "Browser session ID", required: true },
+    },
+    required: ["sessionId"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    try {
+      const session = browserService.forward(args.sessionId as string);
+      return ok("browser.forward", session, `Forward to ${session.currentUrl}`);
+    } catch (err) {
+      return fail("browser.forward", "FORWARD_FAILED", err instanceof Error ? err.message : "Failed to go forward");
+    }
+  },
+};
+
+// ─── Email Send Tools ───────────────────────────────────────────────────────
+
+const emailSendTool: NovaTool = {
+  name: "email.send",
+  description: "Send an email. Requires an authenticated email provider (Gmail/Outlook).", // 
+  category: "email",
+  inputSchema: {
+    properties: {
+      to: { type: "string", description: "Recipient email address", required: true },
+      subject: { type: "string", description: "Email subject", required: true },
+      body: { type: "string", description: "Email body content", required: true },
+      cc: { type: "string", description: "CC recipients (comma-separated)" },
+    },
+    required: ["to", "subject", "body"],
+  },
+  riskLevel: "high",
+  confirmationRequired: true,
+  execute: async (args) => {
+    if (!emailService.isAvailable()) {
+      return fail("email.send", "PROVIDER_NOT_CONNECTED",
+        "No email provider connected. Connect Gmail in Settings → Integrations first.");
+    }
+    try {
+      const to = (args.to as string).split(",").map((e: string) => ({ email: e.trim() }));
+      const cc = args.cc ? (args.cc as string).split(",").map((e: string) => ({ email: e.trim() })) : undefined;
+
+      const draft = await emailService.draft({
+        to,
+        cc,
+        subject: args.subject as string,
+        body: args.body as string,
+      });
+
+      const sent = await emailService.send(draft);
+
+      if (sent.status === "sent") {
+        logActivity("email", `Sent email to ${args.to}: ${args.subject}`, "send");
+        return ok("email.send", sent, `Email sent to ${args.to}`);
+      } else {
+        return fail("email.send", "SEND_FAILED",
+          `Email failed to send. Status: ${sent.status}. Check your email provider connection.`);
+      }
+    } catch (err) {
+      return fail("email.send", "SEND_FAILED", err instanceof Error ? err.message : "Failed to send email");
+    }
+  },
+};
+
+const emailReadTool: NovaTool = {
+  name: "email.read",
+  description: "Read an email by its ID. Requires an authenticated email provider.",
+  category: "email",
+  inputSchema: {
+    properties: {
+      messageId: { type: "string", description: "Email message ID", required: true },
+    },
+    required: ["messageId"],
+  },
+  riskLevel: "safe",
+  confirmationRequired: false,
+  execute: async (args) => {
+    try {
+      const message = await emailService.read(args.messageId as string);
+      if (!message) {
+        return fail("email.read", "NOT_FOUND", "Email not found.");
+      }
+      return ok("email.read", message, `Read: ${message.subject}`);
+    } catch (err) {
+      return fail("email.read", "READ_FAILED", err instanceof Error ? err.message : "Failed to read email");
+    }
+  },
+};
+
 // ─── Registration ────────────────────────────────────────────────────────────
 
 let registered = false;
@@ -1133,6 +1470,24 @@ export function registerAllTools(): void {
   toolRegistry.register(clipboardReadTool);
   toolRegistry.register(clipboardWriteTool);
   toolRegistry.register(clipboardClearTool);
+
+  // Web Search
+  toolRegistry.register(searchWebTool);
+  toolRegistry.register(searchNewsTool);
+
+  // Browser
+  toolRegistry.register(browserOpenTool);
+  toolRegistry.register(browserExtractTool);
+  toolRegistry.register(browserFindTool);
+  toolRegistry.register(browserObserveTool);
+  toolRegistry.register(browserSummarizeTool);
+  toolRegistry.register(browserNavigateTool);
+  toolRegistry.register(browserBackTool);
+  toolRegistry.register(browserForwardTool);
+
+  // Email (real send)
+  toolRegistry.register(emailSendTool);
+  toolRegistry.register(emailReadTool);
 
   console.log(`[ToolRegistry] Registered ${toolRegistry.list().length} tools`);
 }
