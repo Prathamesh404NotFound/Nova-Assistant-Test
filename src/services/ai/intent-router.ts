@@ -1,7 +1,40 @@
-import { IntentResult } from "./types";
+/**
+ * Nova AI OS — Intent Router
+ * Classifies user input into actionable intents.
+ * Routes to tools, LLM, or handles locally.
+ */
+
+import { IntentResult, type Intent } from "./types";
+
+/**
+ * Intent categories for classification.
+ */
+export type IntentCategory =
+  | "TOOL_EXECUTION"     // Smart home, device control, automations
+  | "KNOWLEDGE_QUERY"    // Questions, explanations, reasoning
+  | "TASK_MANAGEMENT"    // Tasks, reminders, to-dos
+  | "CONVERSATION"       // Casual chat, greetings
+  | "NAVIGATION"         // App navigation
+  | "MEMORY_OPERATION"   // Remember/forget
+  | "UTILITY";           // Time, date, calculations
+
+export interface ClassifiedIntent extends IntentResult {
+  category: IntentCategory;
+  /** Extracted entities from the input */
+  entities?: {
+    action?: string;
+    target?: string;
+    content?: string;
+    title?: string;
+    datetime?: string;
+  };
+}
 
 export class IntentRouter {
-  static classify(input: string): IntentResult {
+  /**
+   * Classify user input and return actionable intent.
+   */
+  static classify(input: string): ClassifiedIntent {
     const raw = input.trim();
     const lower = raw.toLowerCase();
 
@@ -9,40 +42,27 @@ export class IntentRouter {
     if (/^(stop|cancel|abort|pause|quiet|shut up|mute)$/i.test(lower)) {
       return {
         intent: "DEVICE_ACTION",
+        category: "TOOL_EXECUTION",
         confidence: 0.99,
         requiresGemini: false,
         requiresTool: true,
         extractedData: { action: "stop" },
+        entities: { action: "stop" },
       };
     }
 
     // 2. GREETINGS & SIMPLE GREETING ALIASES
     const greetings = [
-      "hello",
-      "hi",
-      "hey",
-      "hey nova",
-      "hello nova",
-      "hi nova",
-      "good morning",
-      "good night",
-      "good evening",
-      "good afternoon",
-      "how are you",
-      "how are you doing",
-      "what is your name",
-      "who are you",
-      "thank you",
-      "thanks",
-      "bye",
-      "goodbye",
-      "are you there",
-      "repeat that",
+      "hello", "hi", "hey", "hey nova", "hello nova", "hi nova",
+      "good morning", "good night", "good evening", "good afternoon",
+      "how are you", "how are you doing", "what is your name", "who are you",
+      "thank you", "thanks", "bye", "goodbye", "are you there", "repeat that",
     ];
 
     if (greetings.includes(lower) || /^hey nova|^hello nova|^hi nova/i.test(lower)) {
       return {
         intent: "GREETING",
+        category: "CONVERSATION",
         confidence: 0.98,
         requiresGemini: false,
         requiresTool: false,
@@ -53,17 +73,21 @@ export class IntentRouter {
     if (/\b(what time|time is it|current time|what's the time|check time|clock)\b/i.test(lower)) {
       return {
         intent: "TIME",
+        category: "UTILITY",
         confidence: 0.98,
         requiresGemini: false,
         requiresTool: true,
+        entities: { action: "get_time" },
       };
     }
     if (/\b(what date|today's date|current date|what day is it|what is today's date|today date)\b/i.test(lower)) {
       return {
         intent: "DATE",
+        category: "UTILITY",
         confidence: 0.98,
         requiresGemini: false,
         requiresTool: true,
+        entities: { action: "get_date" },
       };
     }
 
@@ -75,10 +99,12 @@ export class IntentRouter {
       const page = navMatch[2].toLowerCase().replace(/\s+/g, "");
       return {
         intent: "NAVIGATION",
+        category: "NAVIGATION",
         confidence: 0.95,
         requiresGemini: false,
         requiresTool: true,
         extractedData: { target: page },
+        entities: { target: page, action: "navigate" },
       };
     }
 
@@ -87,10 +113,12 @@ export class IntentRouter {
       const content = raw.replace(/^.*?(remember that|remember this|keep in mind|note that|save this memory|memorize that)\s*/i, "");
       return {
         intent: "MEMORY_WRITE",
+        category: "MEMORY_OPERATION",
         confidence: 0.95,
         requiresGemini: false,
         requiresTool: true,
         extractedData: { content: content || raw },
+        entities: { content: content || raw, action: "remember" },
       };
     }
 
@@ -98,18 +126,22 @@ export class IntentRouter {
     if (/\b(what do you remember|show memories|my memories|what is my preference|list memories)\b/i.test(lower)) {
       return {
         intent: "MEMORY_READ",
+        category: "MEMORY_OPERATION",
         confidence: 0.92,
         requiresGemini: false,
         requiresTool: true,
+        entities: { action: "recall" },
       };
     }
     if (/\b(forget this|forget memory|clear memory|erase memory)\b/i.test(lower)) {
       return {
         intent: "MEMORY_READ",
+        category: "MEMORY_OPERATION",
         confidence: 0.9,
         requiresGemini: false,
         requiresTool: true,
         extractedData: { action: "forget" },
+        entities: { action: "forget" },
       };
     }
 
@@ -121,10 +153,12 @@ export class IntentRouter {
       );
       return {
         intent: "TASK_CREATE",
+        category: "TASK_MANAGEMENT",
         confidence: 0.95,
         requiresGemini: false,
         requiresTool: true,
         extractedData: { title: taskTitle || "New Task" },
+        entities: { title: taskTitle || "New Task", action: "create" },
       };
     }
 
@@ -132,9 +166,11 @@ export class IntentRouter {
     if (/\b(show tasks|list tasks|my tasks|what do i have today|view tasks|show my tasks|get tasks)\b/i.test(lower)) {
       return {
         intent: "TASK_READ",
+        category: "TASK_MANAGEMENT",
         confidence: 0.95,
         requiresGemini: false,
         requiresTool: true,
+        entities: { action: "list" },
       };
     }
 
@@ -146,24 +182,45 @@ export class IntentRouter {
     ) {
       return {
         intent: "CALCULATION",
+        category: "UTILITY",
         confidence: 0.92,
         requiresGemini: false,
         requiresTool: true,
+        entities: { action: "calculate", content: raw },
       };
     }
 
     // 10. DEVICE / AUTOMATION ACTIONS
     if (/\b(turn on|turn off|switch on|switch off|toggle light|lock doors|run automation)\b/i.test(lower)) {
+      const actionMatch = lower.match(/\b(turn on|turn off|switch on|switch off|toggle|lock|unlock|run)\b/i);
+      const targetMatch = lower.match(/\b(light|lights|door|doors|thermostat|fan|camera|lock|automation)\b/i);
       return {
         intent: "DEVICE_ACTION",
+        category: "TOOL_EXECUTION",
         confidence: 0.9,
         requiresGemini: false,
         requiresTool: true,
         extractedData: { command: lower },
+        entities: {
+          action: actionMatch?.[1] || "toggle",
+          target: targetMatch?.[1] || "device",
+        },
       };
     }
 
-    // 11. COMPLEX REASONING & KNOWLEDGE QUERIES (Trigger Gemini)
+    // 11. WEB SEARCH / CURRENT INFORMATION (requires Gemini)
+    if (/\b(search|look up|find|google|what happened|latest news|current|today|weather|stock|price)\b/i.test(lower)) {
+      return {
+        intent: "KNOWLEDGE_QUERY",
+        category: "KNOWLEDGE_QUERY",
+        confidence: 0.88,
+        requiresGemini: true,
+        requiresTool: false,
+        entities: { action: "search", content: raw },
+      };
+    }
+
+    // 12. COMPLEX REASONING & KNOWLEDGE QUERIES (Trigger Gemini)
     if (
       /\b(explain|why|how does|analyze|code|summarize|compare|write|draft|generate|solve|debug|quantum|history of|opinion|essay|algorithm|step-by-step)\b/i.test(
         lower
@@ -172,16 +229,19 @@ export class IntentRouter {
     ) {
       return {
         intent: "COMPLEX_REASONING",
+        category: "KNOWLEDGE_QUERY",
         confidence: 0.85,
         requiresGemini: true,
         requiresTool: false,
+        entities: { action: "reason", content: raw },
       };
     }
 
-    // 12. CONVERSATIONAL FALLBACK (Short text without keywords)
+    // 13. CONVERSATIONAL FALLBACK (Short text without keywords)
     if (lower.split(/\s+/).length <= 6) {
       return {
         intent: "CONVERSATION",
+        category: "CONVERSATION",
         confidence: 0.75,
         requiresGemini: false,
         requiresTool: false,
@@ -191,9 +251,11 @@ export class IntentRouter {
     // Default to Complex Reasoning if ambiguous and longer
     return {
       intent: "COMPLEX_REASONING",
+      category: "KNOWLEDGE_QUERY",
       confidence: 0.6,
       requiresGemini: true,
       requiresTool: false,
+      entities: { content: raw },
     };
   }
 }

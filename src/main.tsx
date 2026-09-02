@@ -3,9 +3,11 @@ import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { AppLayout } from "@/components/layout/app-layout";
 import { VlyToolbar } from "./vly-toolbar-readonly";
-import React, { Component, StrictMode, useEffect, lazy, Suspense } from "react";
+import React, { Component, StrictMode, useEffect, lazy, Suspense, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation } from "react-router";
+import { validateEnvironment, getEnvErrorMessage } from "@/lib/env-validator";
+import { AlertTriangle, ExternalLink } from "lucide-react";
 import "./index.css";
 
 // Lazy load all pages
@@ -36,6 +38,36 @@ function RouteLoading() {
       <div className="flex flex-col items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#00d4ff] to-[#8b5cf6] animate-pulse" />
         <span className="text-sm text-[#6e6e8a]">Loading...</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Configuration error screen shown when required env vars are missing.
+ */
+function ConfigurationError({ message }: { message: string }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-[#06060c] p-6">
+      <div className="max-w-lg w-full">
+        <div className="bg-[#0d0d16] border border-[#252540] rounded-2xl p-8 text-center">
+          <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-[#f59e0b]/15 flex items-center justify-center">
+            <AlertTriangle className="h-8 w-8 text-[#f59e0b]" />
+          </div>
+          <h1 className="text-xl font-bold text-[#e8e8f8] mb-4">Configuration Required</h1>
+          <pre className="text-sm text-[#6e6e8a] whitespace-pre-wrap text-left bg-[#16162a] rounded-lg p-4 mb-6">
+            {message}
+          </pre>
+          <a
+            href="https://console.firebase.google.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#00d4ff] to-[#8b5cf6] text-[#06060c] rounded-lg font-medium text-sm hover:opacity-90 transition-opacity"
+          >
+            Open Firebase Console
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
       </div>
     </div>
   );
@@ -100,41 +132,63 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * App root with environment validation.
+ */
+function AppRoot() {
+  const [envError, setEnvError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const result = validateEnvironment();
+    if (!result.valid) {
+      setEnvError(getEnvErrorMessage(result));
+    }
+  }, []);
+
+  if (envError) {
+    return <ConfigurationError message={envError} />;
+  }
+
+  return (
+    <BrowserRouter>
+      <RouteSyncer />
+      <Suspense fallback={<RouteLoading />}>
+        <Routes>
+          <Route path="/" element={<Landing />} />
+          <Route path="/auth" element={<AuthPage redirectAfterAuth="/dashboard" />} />
+
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+          <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
+          <Route path="/memory" element={<ProtectedRoute><MemoryPage /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+          <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
+          <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+          <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+          <Route path="/email" element={<ProtectedRoute><EmailPage /></ProtectedRoute>} />
+          <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
+          <Route path="/browser" element={<ProtectedRoute><BrowserPage /></ProtectedRoute>} />
+          <Route path="/coding" element={<ProtectedRoute><CodingPage /></ProtectedRoute>} />
+          <Route path="/smart-home" element={<ProtectedRoute><SmartHomePage /></ProtectedRoute>} />
+          <Route path="/files" element={<ProtectedRoute><FilesPage /></ProtectedRoute>} />
+          <Route path="/automations" element={<ProtectedRoute><AutomationsPage /></ProtectedRoute>} />
+          <Route path="/activity" element={<ProtectedRoute><ActivityPage /></ProtectedRoute>} />
+          <Route path="/security" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
+
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <RootErrorBoundary>
       <ToolbarErrorBoundary>
         <VlyToolbar />
       </ToolbarErrorBoundary>
-      <BrowserRouter>
-        <RouteSyncer />
-        <Suspense fallback={<RouteLoading />}>
-          <Routes>
-            <Route path="/" element={<Landing />} />
-            <Route path="/auth" element={<AuthPage redirectAfterAuth="/dashboard" />} />
-
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-            <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
-            <Route path="/memory" element={<ProtectedRoute><MemoryPage /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-            <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
-            <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
-            <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
-            <Route path="/email" element={<ProtectedRoute><EmailPage /></ProtectedRoute>} />
-            <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
-            <Route path="/browser" element={<ProtectedRoute><BrowserPage /></ProtectedRoute>} />
-            <Route path="/coding" element={<ProtectedRoute><CodingPage /></ProtectedRoute>} />
-            <Route path="/smart-home" element={<ProtectedRoute><SmartHomePage /></ProtectedRoute>} />
-            <Route path="/files" element={<ProtectedRoute><FilesPage /></ProtectedRoute>} />
-            <Route path="/automations" element={<ProtectedRoute><AutomationsPage /></ProtectedRoute>} />
-            <Route path="/activity" element={<ProtectedRoute><ActivityPage /></ProtectedRoute>} />
-            <Route path="/security" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
-
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
+      <AppRoot />
       <Toaster />
     </RootErrorBoundary>
   </StrictMode>,

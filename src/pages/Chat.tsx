@@ -49,6 +49,7 @@ export default function Chat() {
   const {
     messages,
     isStreaming,
+    error,
     sendMessage,
     stopGeneration,
     clearMessages,
@@ -57,6 +58,7 @@ export default function Chat() {
     lastSource,
     loadConversation,
     deleteConversationById,
+    retryLastMessage,
   } = useChat({
     apiKey: geminiKey,
     onNavigate: handleNavigate,
@@ -370,6 +372,25 @@ export default function Chat() {
                 ))}
               </div>
             </div>
+          )}
+
+          {/* Error Banner */}
+          {error && !isStreaming && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex items-center justify-between p-3 rounded-lg bg-[#f43f5e]/10 border border-[#f43f5e]/20"
+            >
+              <p className="text-xs text-[#f43f5e]">{error}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-[#f43f5e] hover:text-[#f43f5e]/80 text-xs"
+                onClick={retryLastMessage}
+              >
+                Retry
+              </Button>
+            </motion.div>
           )}
 
           {messages.map((msg) => (
