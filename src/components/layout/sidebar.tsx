@@ -17,38 +17,36 @@ import {
   Bot,
   Puzzle,
   Mic,
+  LayoutDashboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
 import { useTheme } from "@/hooks/use-theme";
-import { Sun, Moon, Monitor } from "lucide-react";
-
-const navItems = [
-  { to: "/dashboard", icon: LayoutDashboard, label: "Command Center" },
-  { to: "/chat", icon: MessageSquare, label: "Conversations", badge: 12 },
-  { to: "/tasks", icon: CheckSquare, label: "Tasks", badge: 5 },
-  { to: "/memory", icon: Brain, label: "Memory" },
-  { to: "/calendar", icon: Calendar, label: "Calendar" },
-  { to: "/email", icon: Mail, label: "Email" },
-  { to: "/agents", icon: Bot, label: "Agents" },
-  { to: "/devices", icon: Smartphone, label: "Devices" },
-  { to: "/browser", icon: Globe, label: "Browser" },
-  { to: "/coding", icon: Code, label: "Coding" },
-  { to: "/smart-home", icon: Home, label: "Smart Home" },
-  { to: "/files", icon: Files, label: "Files" },
-  { to: "/automations", icon: Zap, label: "Workflows", badge: 18 },
-  { to: "/activity", icon: Activity, label: "Activity" },
-  { to: "/security", icon: Shield, label: "Security" },
-  { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },
-  { to: "/settings", icon: Settings, label: "Settings" },
-];
-
-function LayoutDashboard(props: any) {
-  return <MessageSquare {...props} />;
-}
+import { useDashboardData } from "@/hooks/use-dashboard-data";
 
 export function Sidebar() {
   const { theme, setTheme } = useTheme();
+  const { counts } = useDashboardData();
+
+  const navItems = [
+    { to: "/dashboard", icon: LayoutDashboard, label: "Command Center" },
+    { to: "/chat", icon: MessageSquare, label: "Conversations", badge: counts.conversations || undefined },
+    { to: "/tasks", icon: CheckSquare, label: "Tasks", badge: counts.tasks || undefined },
+    { to: "/memory", icon: Brain, label: "Memory" },
+    { to: "/calendar", icon: Calendar, label: "Calendar", badge: counts.calendarEvents || undefined },
+    { to: "/email", icon: Mail, label: "Email", badge: counts.emailDrafts || undefined },
+    { to: "/agents", icon: Bot, label: "Agents" },
+    { to: "/devices", icon: Smartphone, label: "Devices" },
+    { to: "/browser", icon: Globe, label: "Browser" },
+    { to: "/coding", icon: Code, label: "Coding" },
+    { to: "/smart-home", icon: Home, label: "Smart Home" },
+    { to: "/files", icon: Files, label: "Files", badge: counts.files || undefined },
+    { to: "/automations", icon: Zap, label: "Workflows", badge: counts.automations || undefined },
+    { to: "/activity", icon: Activity, label: "Activity", badge: counts.activities || undefined },
+    { to: "/security", icon: Shield, label: "Security" },
+    { to: "/plugins", icon: Puzzle, label: "Tools & Skills" },
+    { to: "/settings", icon: Settings, label: "Settings" },
+  ];
 
   return (
     <aside className="hidden lg:flex fixed left-0 top-0 bottom-0 w-60 flex-col border-r border-nova-border bg-[#081422]/95 backdrop-blur-xl z-40">
@@ -80,6 +78,7 @@ export function Sidebar() {
           <NavLink
             key={item.to}
             to={item.to}
+            aria-label={item.label}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] transition-all duration-200 group",
@@ -89,9 +88,9 @@ export function Sidebar() {
               )
             }
           >
-            <item.icon className="w-4 h-4 shrink-0" />
+            <item.icon className="w-4 h-4 shrink-0" aria-hidden="true" />
             <span className="flex-1">{item.label}</span>
-            {item.badge && (
+            {item.badge != null && item.badge > 0 && (
               <span className="text-[10px] bg-[#00d4ff]/15 text-[#00d4ff] px-1.5 py-0.5 rounded-full font-mono font-medium">
                 {item.badge}
               </span>
@@ -103,10 +102,10 @@ export function Sidebar() {
       {/* Voice Status */}
       <div className="px-4 py-3 border-t border-nova-border">
         <div className="flex items-center gap-2 mb-2">
-          <Mic className="w-3.5 h-3.5 text-[#00d4ff]" />
+          <Mic className="w-3.5 h-3.5 text-[#00d4ff]" aria-hidden="true" />
           <span className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Voice Status</span>
         </div>
-        <div className="flex items-center gap-1 h-6 px-2">
+        <div className="flex items-center gap-1 h-6 px-2" role="img" aria-label="Voice waveform visualization">
           {Array.from({ length: 20 }).map((_, i) => (
             <div
               key={i}
@@ -118,46 +117,43 @@ export function Sidebar() {
             />
           ))}
         </div>
-        <p className="text-[10px] text-[#5a7a9a] mt-1 text-center">Listening...</p>
+        <div className="flex items-center justify-between mt-2">
+          <button
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#00d4ff]/10 text-[#00d4ff] text-[11px] font-medium hover:bg-[#00d4ff]/20 transition-colors"
+            aria-label="Tap to speak"
+          >
+            <Mic className="w-3 h-3" aria-hidden="true" />
+            Tap to Speak
+          </button>
+        </div>
       </div>
 
-      {/* Bottom Status */}
+      {/* Theme Toggle + Config */}
       <div className="px-4 py-3 border-t border-nova-border space-y-2">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse" />
-          <span className="text-[11px] text-[#5a7a9a]">Nova Online</span>
+        <div className="flex items-center gap-1" role="radiogroup" aria-label="Theme selection">
+          {[
+            { value: "light" as const, icon: "☀️", label: "Light theme" },
+            { value: "dark" as const, icon: "🌙", label: "Dark theme" },
+            { value: "system" as const, icon: "💻", label: "System theme" },
+          ].map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTheme(opt.value)}
+              role="radio"
+              aria-checked={theme === opt.value}
+              aria-label={opt.label}
+              className={cn(
+                "flex-1 py-1.5 rounded-md text-xs transition-colors",
+                theme === opt.value
+                  ? "bg-[#00d4ff]/15 text-[#00d4ff]"
+                  : "text-[#5a7a9a] hover:text-[#c8d6e5] hover:bg-[#0f2035]/60"
+              )}
+            >
+              {opt.icon}
+            </button>
+          ))}
         </div>
         <ConfigStatus />
-        {/* Theme Toggle */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setTheme("dark")}
-            className={cn(
-              "p-1.5 rounded-lg transition-colors",
-              theme === "dark" ? "bg-[#00d4ff]/15 text-[#00d4ff]" : "text-[#5a7a9a] hover:text-[#c8d6e5]"
-            )}
-          >
-            <Moon className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => setTheme("light")}
-            className={cn(
-              "p-1.5 rounded-lg transition-colors",
-              theme === "light" ? "bg-[#00d4ff]/15 text-[#00d4ff]" : "text-[#5a7a9a] hover:text-[#c8d6e5]"
-            )}
-          >
-            <Sun className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={() => setTheme("system")}
-            className={cn(
-              "p-1.5 rounded-lg transition-colors",
-              theme === "system" ? "bg-[#00d4ff]/15 text-[#00d4ff]" : "text-[#5a7a9a] hover:text-[#c8d6e5]"
-            )}
-          >
-            <Monitor className="h-3.5 w-3.5" />
-          </button>
-        </div>
       </div>
     </aside>
   );

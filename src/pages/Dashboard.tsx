@@ -16,6 +16,7 @@ import { getTasks } from "@/lib/rtdb";
 import { getMemories } from "@/lib/rtdb";
 import { getConversations } from "@/lib/local-store";
 import { logActivity } from "@/lib/local-store";
+import { useDashboardData } from "@/hooks/use-dashboard-data";
 import {
   Mic,
   MicOff,
@@ -58,14 +59,7 @@ const quickCommands = [
   { label: "Open coding sandbox", icon: Code, action: "coding" },
 ];
 
-const agentCards = [
-  { name: "Coding Agent", status: "Active", color: "#00d4ff", icon: Code },
-  { name: "Research Agent", status: "Standby", color: "#8b5cf6", icon: Globe },
-  { name: "Memory Agent", status: "Active", color: "#10b981", icon: Brain },
-  { name: "Browser Agent", status: "Standby", color: "#f59e0b", icon: Globe },
-  { name: "Task Agent", status: "Standby", color: "#00d4ff", icon: CheckSquare },
-  { name: "System Agent", status: "Active", color: "#10b981", icon: Shield },
-];
+
 
 function getGreeting(): string {
   const h = new Date().getHours();
@@ -139,6 +133,7 @@ export default function Dashboard() {
   const [taskCount, setTaskCount] = useState(0);
   const [memoryCount, setMemoryCount] = useState(0);
   const [convCount, setConvCount] = useState(0);
+  const { agents, intelligence, counts } = useDashboardData();
   const [currentTime, setCurrentTime] = useState(getCurrentTime());
 
   useEffect(() => {
@@ -237,8 +232,8 @@ export default function Dashboard() {
               <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">{getCurrentDate()}</p>
               <p className="text-sm font-mono font-bold text-[#00d4ff] jarvis-glow-text">{currentTime}</p>
             </div>
-            <Button variant="ghost" size="sm" className="text-[#5a7a9a] hover:text-[#c8d6e5]" onClick={handleSignOut}>
-              <LogOut className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="text-[#5a7a9a] hover:text-[#c8d6e5]" onClick={handleSignOut} aria-label="Sign out">
+              <LogOut className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
         </motion.header>
@@ -254,7 +249,7 @@ export default function Dashboard() {
                   { label: "AI Core", value: "Active", color: "#10b981", icon: Cpu },
                   { label: "Memory", value: `${memoryCount} Stored`, color: "#8b5cf6", icon: Brain },
                   { label: "Voice", value: isListening ? "Listening" : "Online", color: "#00d4ff", icon: Mic },
-                  { label: "Agents", value: "2 Running", color: "#10b981", icon: Bot },
+                  { label: "Agents", value: `${agents.filter(a => a.status === "active").length} Running`, color: "#10b981", icon: Bot },
                   { label: "Conversations", value: `${convCount} Total`, color: "#00d4ff", icon: MessageSquare },
                   { label: "System", value: "Optimal", color: "#10b981", icon: Shield },
                 ].map((item) => (
@@ -294,8 +289,8 @@ export default function Dashboard() {
                 >
                   {isListening ? <><MicOff className="mr-2 h-4 w-4" />Stop Listening</> : <><Mic className="mr-2 h-4 w-4" />Talk to Nova</>}
                 </Button>
-                <button onClick={() => setIsMuted(!isMuted)} className="text-[#5a7a9a] hover:text-[#c8d6e5] transition-colors">
-                  {isMuted ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+                <button onClick={() => setIsMuted(!isMuted)} className="text-[#5a7a9a] hover:text-[#c8d6e5] transition-colors" aria-label={isMuted ? "Unmute voice output" : "Mute voice output"}>
+                  {isMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
                 </button>
                 {novaResponse && (
                   <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -311,9 +306,9 @@ export default function Dashboard() {
               <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Quick Commands</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {quickCommands.map((cmd) => (
-                  <button key={cmd.label} onClick={() => handleCommand(cmd.action)}
+                  <button key={cmd.label} onClick={() => handleCommand(cmd.action)} aria-label={cmd.label}
                     className="flex items-center gap-2 p-2.5 rounded-lg bg-[#0f2035]/60 hover:bg-[#162a42] border border-[#1a2f4a]/50 hover:border-[#00d4ff]/30 text-xs text-[#c8d6e5] transition-all text-left group">
-                    <cmd.icon className="w-3.5 h-3.5 text-[#5a7a9a] group-hover:text-[#00d4ff] transition-colors" />
+                    <cmd.icon className="w-3.5 h-3.5 text-[#5a7a9a] group-hover:text-[#00d4ff] transition-colors" aria-hidden="true" />
                     <span>{cmd.label}</span>
                   </button>
                 ))}
@@ -331,22 +326,20 @@ export default function Dashboard() {
                 </span>
               </div>
               <div className="space-y-2.5">
-                {[
-                  { text: "System health check passed", type: "info", time: "2m ago" },
-                  { text: "Memory agent synced 3 new items", type: "info", time: "5m ago" },
-                  { text: "Local AI model cached", type: "success", time: "12m ago" },
-                  { text: "2 tasks overdue — review needed", type: "warn", time: "1h ago" },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-start gap-2 py-1.5 border-b border-[#1a2f4a]/30 last:border-0">
+                {intelligence.slice(0, 6).map((item) => (
+                  <div key={item.id} className="flex items-start gap-2 py-1.5 border-b border-[#1a2f4a]/30 last:border-0">
                     <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
                       item.type === "warn" ? "bg-[#f59e0b]" : item.type === "success" ? "bg-[#10b981]" : "bg-[#00d4ff]"
                     }`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-[11px] text-[#c8d6e5] leading-snug">{item.text}</p>
-                      <p className="text-[9px] text-[#5a7a9a] mt-0.5">{item.time}</p>
+                      <p className="text-[9px] text-[#5a7a9a] mt-0.5">{item.source}</p>
                     </div>
                   </div>
                 ))}
+                {intelligence.length === 0 && (
+                  <p className="text-[11px] text-[#5a7a9a] text-center py-4">No activity yet. Start using Nova to see your feed.</p>
+                )}
               </div>
             </div>
           </motion.div>
@@ -359,17 +352,17 @@ export default function Dashboard() {
             <div className="jarvis-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Active Agents</h3>
-                <button className="text-[10px] text-[#00d4ff] hover:underline">View All</button>
+                <button className="text-[10px] text-[#00d4ff] hover:underline" onClick={() => navigate("/agents")} aria-label="View all agents">View All</button>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                {agentCards.map((agent) => (
-                  <div key={agent.name} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                {agents.map((agent) => (
+                  <div key={agent.id} className="flex items-center gap-2.5 p-2.5 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ backgroundColor: `${agent.color}15` }}>
-                      <agent.icon className="w-4 h-4" style={{ color: agent.color }} />
+                      <Bot className="w-4 h-4" style={{ color: agent.color }} aria-hidden="true" />
                     </div>
                     <div>
                       <p className="text-[11px] font-medium text-[#c8d6e5]">{agent.name}</p>
-                      <p className="text-[9px]" style={{ color: agent.color }}>{agent.status}</p>
+                      <p className="text-[9px] capitalize" style={{ color: agent.color }}>{agent.status}</p>
                     </div>
                   </div>
                 ))}
@@ -399,7 +392,7 @@ export default function Dashboard() {
                   { label: "Memories", value: memoryCount, color: "#8b5cf6", route: "/memory" },
                   { label: "Conversations", value: convCount, color: "#00d4ff", route: "/chat" },
                 ].map((stat) => (
-                  <button key={stat.label} onClick={() => navigate(stat.route)}
+                  <button key={stat.label} onClick={() => navigate(stat.route)} aria-label={`${stat.label}: ${stat.value}`}
                     className="w-full text-left flex items-center justify-between p-2.5 rounded-lg bg-[#0f2035]/40 hover:bg-[#162a42] border border-[#1a2f4a]/30 transition-colors group">
                     <span className="text-[11px] text-[#5a7a9a] group-hover:text-[#c8d6e5]">{stat.label}</span>
                     <span className="text-lg font-bold font-mono" style={{ color: stat.color }}>{stat.value}</span>

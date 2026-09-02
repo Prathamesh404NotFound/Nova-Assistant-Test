@@ -176,8 +176,9 @@ export default function SettingsPage() {
                     <button
                       onClick={() => setShowKeys((p) => ({ ...p, [config.id]: !p[config.id] }))}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-[#6e6e8a] hover:text-[#e8e8f8]"
+                      aria-label={showKeys[config.id] ? "Hide key" : "Show key"}
                     >
-                      {showKeys[config.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showKeys[config.id] ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                     </button>
                   </div>
                   {keys[config.id] && (
@@ -186,8 +187,9 @@ export default function SettingsPage() {
                       size="sm"
                       onClick={() => clearKey(config.id)}
                       className="text-[#6e6e8a] hover:text-[#f43f5e]"
+                      aria-label={`Clear ${config.name}`}
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   )}
                 </div>

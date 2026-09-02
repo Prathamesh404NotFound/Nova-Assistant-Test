@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { logActivity } from "@/lib/local-store";
+import { useDashboardData } from "@/hooks/use-dashboard-data";
 import {
   Bot,
   Globe,
@@ -26,85 +27,28 @@ const fadeUp = {
   }),
 };
 
-interface Agent {
+interface AgentDetail {
   name: string;
   desc: string;
   icon: React.ComponentType<any>;
-  status: "active" | "standby" | "configuring";
-  color: string;
   capabilities: string[];
   route: string;
 }
 
-const agents: Agent[] = [
-  {
-    name: "Browser Agent",
-    desc: "Browse the web and extract information",
-    icon: Globe,
-    status: "active",
-    color: "#00d4ff",
-    capabilities: ["Web search", "URL fetching", "Content extraction", "Page summarization"],
-    route: "/browser",
-  },
-  {
-    name: "Coding Agent",
-    desc: "Write and review code via GitHub",
-    icon: Code,
-    status: "active",
-    color: "#8b5cf6",
-    capabilities: ["JavaScript sandbox", "Code execution", "Syntax highlighting", "Console output"],
-    route: "/coding",
-  },
-  {
-    name: "Email Agent",
-    desc: "Draft and manage emails",
-    icon: Mail,
-    status: "active",
-    color: "#10b981",
-    capabilities: ["Draft composition", "Template management", "Send tracking", "Inbox organization"],
-    route: "/email",
-  },
-  {
-    name: "Home Agent",
-    desc: "Control smart home devices",
-    icon: Home,
-    status: "active",
-    color: "#f59e0b",
-    capabilities: ["Device control", "Voice commands", "Room management", "Automation triggers"],
-    route: "/smart-home",
-  },
-  {
-    name: "Task Agent",
-    desc: "Manage tasks and reminders",
-    icon: Bot,
-    status: "active",
-    color: "#10b981",
-    capabilities: ["Task creation", "Priority management", "Deadline tracking", "Voice-to-task"],
-    route: "/tasks",
-  },
-  {
-    name: "Memory Agent",
-    desc: "Store and retrieve personal information",
-    icon: Brain,
-    status: "active",
-    color: "#8b5cf6",
-    capabilities: ["Fact storage", "Preference tracking", "Person profiles", "Context retrieval"],
-    route: "/memory",
-  },
-  {
-    name: "Chat Agent",
-    desc: "Conversational AI with voice support",
-    icon: MessageSquare,
-    status: "active",
-    color: "#00d4ff",
-    capabilities: ["Natural conversation", "Intent routing", "Voice I/O", "Context awareness"],
-    route: "/chat",
-  },
-];
+const agentDetails: Record<string, AgentDetail> = {
+  browser: { name: "Browser Agent", desc: "Browse the web and extract information", icon: Globe, capabilities: ["Web search", "URL fetching", "Content extraction", "Page summarization"], route: "/browser" },
+  coding: { name: "Coding Agent", desc: "Write and review code via GitHub", icon: Code, capabilities: ["JavaScript sandbox", "Code execution", "Syntax highlighting", "Console output"], route: "/coding" },
+  email: { name: "Email Agent", desc: "Draft and manage emails", icon: Mail, capabilities: ["Draft composition", "Template management", "Send tracking", "Inbox organization"], route: "/email" },
+  home: { name: "Home Agent", desc: "Control smart home devices", icon: Home, capabilities: ["Device control", "Voice commands", "Room management", "Automation triggers"], route: "/smart-home" },
+  task: { name: "Task Agent", desc: "Manage tasks and reminders", icon: Bot, capabilities: ["Task creation", "Priority management", "Deadline tracking", "Voice-to-task"], route: "/tasks" },
+  memory: { name: "Memory Agent", desc: "Store and retrieve personal information", icon: Brain, capabilities: ["Fact storage", "Preference tracking", "Person profiles", "Context retrieval"], route: "/memory" },
+  chat: { name: "Chat Agent", desc: "Conversational AI with voice support", icon: MessageSquare, capabilities: ["Natural conversation", "Intent routing", "Voice I/O", "Context awareness"], route: "/chat" },
+};
 
 export default function AgentsPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { agents } = useDashboardData();
 
   return (
     <main className="min-h-screen bg-[#06060c] px-4 sm:px-6 py-6 sm:py-10">
@@ -116,23 +60,28 @@ export default function AgentsPage() {
 
         <div className="space-y-3">
           {agents.map((agent, i) => {
-            const isExpanded = expanded === agent.name;
+            const detail = agentDetails[agent.id];
+            if (!detail) return null;
+            const isExpanded = expanded === agent.id;
             return (
-              <motion.div key={agent.name} initial="hidden" animate="visible" variants={fadeUp} custom={i + 1}>
+              <motion.div key={agent.id} initial="hidden" animate="visible" variants={fadeUp} custom={i + 1}>
                 <Card className="nova-glass nova-glass-hover overflow-hidden">
                   <div
                     className="p-4 flex items-center gap-4 cursor-pointer"
-                    onClick={() => setExpanded(isExpanded ? null : agent.name)}
+                    onClick={() => setExpanded(isExpanded ? null : agent.id)}
+                    role="button"
+                    aria-expanded={isExpanded}
+                    aria-label={`${detail.name} - ${agent.status}`}
                   >
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
                       style={{ backgroundColor: `${agent.color}15` }}
                     >
-                      <agent.icon className="w-5 h-5" style={{ color: agent.color }} />
+                      <detail.icon className="w-5 h-5" style={{ color: agent.color }} aria-hidden="true" />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-medium text-[#e8e8f8]">{agent.name}</p>
-                      <p className="text-xs text-[#6e6e8a]">{agent.desc}</p>
+                      <p className="text-sm font-medium text-[#e8e8f8]">{detail.name}</p>
+                      <p className="text-xs text-[#6e6e8a]">{detail.desc}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge className={`text-xs border-0 ${
@@ -156,7 +105,7 @@ export default function AgentsPage() {
                     >
                       <p className="text-xs text-[#6e6e8a] uppercase tracking-wider mb-2">Capabilities</p>
                       <div className="flex flex-wrap gap-1.5 mb-3">
-                        {agent.capabilities.map((cap) => (
+                        {detail.capabilities.map((cap) => (
                           <Badge
                             key={cap}
                             className="text-[10px] border-0"
@@ -170,21 +119,23 @@ export default function AgentsPage() {
                         <Button
                           size="sm"
                           onClick={() => {
-                            logActivity("agent", `Opened ${agent.name}`, "bot");
-                            navigate(agent.route);
+                            logActivity("agent", `Opened ${detail.name}`, "bot");
+                            navigate(detail.route);
                           }}
                           className="bg-[#00d4ff] text-[#06060c] hover:bg-[#00d4ff]/80 text-xs"
+                          aria-label={`Launch ${detail.name}`}
                         >
-                          <Play className="h-3 w-3 mr-1" />
+                          <Play className="h-3 w-3 mr-1" aria-hidden="true" />
                           Launch
                         </Button>
                         <Button
                           size="sm"
                           variant="outline"
                           className="border-[#252540] text-[#6e6e8a] hover:text-[#e8e8f8] hover:bg-[#1e1e38] text-xs"
-                          onClick={() => logActivity("agent", `Configured ${agent.name}`, "settings")}
+                          onClick={() => logActivity("agent", `Configured ${detail.name}`, "settings")}
+                          aria-label={`Configure ${detail.name}`}
                         >
-                          <Settings className="h-3 w-3 mr-1" />
+                          <Settings className="h-3 w-3 mr-1" aria-hidden="true" />
                           Configure
                         </Button>
                       </div>
