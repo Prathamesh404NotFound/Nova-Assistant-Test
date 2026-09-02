@@ -10,10 +10,11 @@ import {
   orderByChild,
   equalTo,
 } from "firebase/database";
-import { db } from "./firebase";
+import { db, isFirebaseReady } from "./firebase";
 
 // ── Generic helpers ──────────────────────────────────────────────
 function userPath(userId: string, ...segments: string[]) {
+  if (!db || !isFirebaseReady()) throw new Error("Firebase not configured");
   return ref(db, `users/${userId}/${segments.join("/")}`);
 }
 
