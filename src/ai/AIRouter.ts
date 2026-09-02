@@ -6,7 +6,7 @@
 
 import { localAIService, type ChatMessage as LocalChatMessage } from "./local/LocalAIService";
 import { getAIMode, type AIMode } from "./local/LocalAISettings";
-import { callGemini, streamGeminiResponse } from "@/lib/gemini";
+import { callGemini, streamGeminiResponse, classifyTask } from "@/lib/gemini";
 
 export type AIRouterSource = "local" | "gemini";
 
@@ -156,6 +156,7 @@ async function routeToGemini(
         streamGeminiResponse({
           messages: [{ role: "user", parts: [{ text: input }] }],
           apiKey: geminiKey,
+          taskType: classifyTask(input),
           systemInstruction:
             "You are Nova. Reply with ONLY the essential answer. No explanations, no filler, no preamble. Just the fact or action requested. Example: Q: Capital of France? A: Paris",
           onChunk: (chunk) => {
@@ -168,7 +169,7 @@ async function routeToGemini(
       });
       textResponse = accumulated;
     } else {
-      textResponse = await callGemini(geminiKey, input);
+      textResponse = await callGemini(geminiKey, input, undefined, classifyTask(input));
     }
   } catch (err) {
     textResponse = `Gemini is unavailable right now (${
