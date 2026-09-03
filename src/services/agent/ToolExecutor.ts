@@ -5,6 +5,9 @@
  */
 
 import { toolRegistry } from "./ToolRegistry";
+import { securityLayer } from "@/services/security";
+import { rateLimiter, loopDetector, emergencyStop } from "@/services/safety";
+import { recoveryEngine } from "@/services/self-healing";
 import type {
   ToolContext,
   ToolResult,
@@ -20,6 +23,10 @@ class ToolExecutorImpl {
   private pendingConfirmations = new Map<string, PendingConfirmation>();
   private actionLog: ActionLogEntry[] = [];
   private onConfirmationNeeded?: (pending: PendingConfirmation) => void;
+
+  constructor() {
+    securityLayer.init();
+  }
 
   /** Set callback for when confirmation is needed. */
   setConfirmationHandler(handler: (pending: PendingConfirmation) => void): void {
@@ -46,13 +53,57 @@ class ToolExecutorImpl {
       return this.fail(toolName, "UNAVAILABLE", `Tool '${toolName}' is currently unavailable`, false, start);
     }
 
-    // 3. Validate arguments
+    // 3. Emergency stop check
+    if (!emergencyStop.canExecute(toolName)) {
+      securityLayer.audit("security.violation", false, `Blocked '${toolName}' during emergency stop`, {
+        tool: toolName, risk: "critical", source: options?.source || "system",
+      });
+      return this.fail(toolName, "EMERGENCY_STOP", "Nova is in emergency stop mode. Most actions are paused.", false, start);
+    }
+
+    // 4. Rate limit check
+    if (!rateLimiter.check(tool.category)) {
+      securityLayer.audit("security.violation", false, `Rate limit exceeded for '${tool.category}'`, {
+        tool: toolName, risk: tool.riskLevel, source: options?.source || "system",
+      });
+      return this.fail(toolName, "RATE_LIMITED", `Rate limit exceeded for ${tool.category}. Please wait a moment.`, false, start);
+    }
+
+    // 5. Loop detection
+    const loopKey = `${context.source || "unknown"}:${toolName}`;
+    if (loopDetector.record(loopKey, 5, 60_000)) {
+      securityLayer.audit("security.violation", false, `Loop detected: repeated '${toolName}' calls`, {
+        tool: toolName, risk: tool.riskLevel, source: options?.source || "system",
+      });
+      return this.fail(toolName, "LOOP_DETECTED", `Detected repeated calls to '${toolName}'. Stopping to prevent a loop.`, false, start);
+    }
+
+    // 6. Security metadata check
+    const secMeta = securityLayer.getToolSecurityMeta(toolName, tool.category);
+    const permDecision = securityLayer.checkPermission(toolName, tool.category, context.missionId ? { missionId: context.missionId } : undefined);
+    if (!permDecision.allowed) {
+      const denyReason = "reason" in permDecision ? permDecision.reason : "Permission denied";
+      securityLayer.audit("permission.deny", false, denyReason, {
+        tool: toolName, risk: tool.riskLevel, source: options?.source || "system",
+      });
+      return this.fail(toolName, "PERMISSION_DENIED", denyReason, false, start);
+    }
+
+    // 7. Scope validation for destructive operations
+    if (secMeta.requiresScopeValidation) {
+      const scopeCheck = securityLayer.validateDestructiveScope(toolName, args);
+      if (!scopeCheck.valid) {
+        return this.fail(toolName, "SCOPE_AMBIGUOUS", scopeCheck.question || "Ambiguous scope", false, start);
+      }
+    }
+
+    // 8. Validate arguments
     const validationError = toolRegistry.validate(toolName, args);
     if (validationError) {
       return this.fail(toolName, "INVALID_INPUT", validationError, false, start);
     }
 
-    // 4. Check confirmation requirement
+    // 9. Check confirmation requirement
     const needsConfirmation =
       !options?.skipConfirmation &&
       (typeof tool.confirmationRequired === "function"
@@ -86,11 +137,23 @@ class ToolExecutorImpl {
       };
     }
 
-    // 5. Execute the tool
-    try {
-      const result = await tool.execute(args, context);
+    // 10. Execute the tool with self-healing recovery
+    const executionResult = await recoveryEngine.executeWithRecovery(
+      toolName,
+      async () => {
+        const result = await tool.execute(args, context);
+        if (!result.success) {
+          throw new Error(result.error?.message || "Tool execution failed");
+        }
+        return result;
+      },
+      undefined, // no fallback providers by default
+      { maxAttempts: secMeta.externalSideEffects ? 1 : 2 }
+    );
 
-      // 6. Log the action
+    if (executionResult.success && executionResult.result) {
+      const result = executionResult.result as ToolResult;
+      // Log the action
       this.log({
         id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         timestamp: Date.now(),
@@ -103,11 +166,20 @@ class ToolExecutorImpl {
         source: options?.source || "chat",
       });
 
+      // Security audit log
+      securityLayer.audit("tool.execute", true, `Executed ${toolName} in ${Date.now() - start}ms`, {
+        tool: toolName,
+        risk: tool.riskLevel,
+        source: options?.source || "system",
+      });
+
       return result;
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Unknown execution error";
-      this.log({
-        id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    }
+
+    // Execution failed
+    const errorMsg = executionResult.error || "Unknown execution error";
+    this.log({
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
         timestamp: Date.now(),
         tool: toolName,
         action: (args.action as string) || "execute",
@@ -116,10 +188,16 @@ class ToolExecutorImpl {
         error: errorMsg,
         duration: Date.now() - start,
         source: options?.source || "chat",
-      });
+    });
 
-      return this.fail(toolName, "EXECUTION_ERROR", errorMsg, true, start);
-    }
+    // Security audit log for failure
+    securityLayer.audit("tool.execute", false, `Failed ${toolName}: ${errorMsg}`, {
+      tool: toolName,
+      risk: tool.riskLevel,
+      source: options?.source || "system",
+    });
+
+    return this.fail(toolName, "EXECUTION_ERROR", errorMsg, true, start);
   }
 
   /** Confirm a pending action. */

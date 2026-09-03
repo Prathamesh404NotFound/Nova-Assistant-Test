@@ -67,6 +67,7 @@ export interface ToolContext {
   source?: "voice" | "chat" | "quick-action" | "system";
   recentActions?: ActionLogEntry[];
   conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>;
+  missionId?: string;
 }
 
 export interface ToolResult {
