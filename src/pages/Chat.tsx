@@ -44,13 +44,30 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
+  // Voice mode: when true, Nova auto-restarts listening after TTS finishes
+  const [voiceModeActive, setVoiceModeActive] = useState(false);
 
   // Initialize TTS router with callbacks
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const isSpeakingRef = useRef(false);
   useEffect(() => {
     ttsRouter.setCallbacks({
-      onPlay: () => setIsSpeaking(true),
-      onEnd: () => setIsSpeaking(false),
+      onPlay: () => {
+        setIsSpeaking(true);
+        isSpeakingRef.current = true;
+      },
+      onEnd: () => {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        // Auto-restart STT if voice mode is active — enables continuous conversation
+        if (voiceModeActive) {
+          setTimeout(() => {
+            if (voiceModeActive && !isSpeakingRef.current) {
+              startSTT();
+            }
+          }, 300);
+        }
+      },
     });
     ttsRouter.initialize();
   }, []);
@@ -66,6 +83,7 @@ export default function Chat() {
   const stopTTS = useCallback(() => {
     ttsRouter.stop();
     setIsSpeaking(false);
+    isSpeakingRef.current = false;
   }, []);
 
   const handleNavigate = useCallback(
@@ -130,6 +148,7 @@ export default function Chat() {
 
   const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({
     onTranscript: handleTranscript,
+    continuous: voiceModeActive,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -510,10 +529,39 @@ export default function Chat() {
               type="button"
               variant="ghost"
               size="sm"
-              onClick={isListening ? stopSTT : startSTT}
-              className={`shrink-0 ${isListening ? "text-red-400 bg-red-500/10" : "text-[#6e6e8a]"}`}
+              onClick={() => {
+                if (voiceModeActive) {
+                  // Deactivate voice mode
+                  setVoiceModeActive(false);
+                  stopSTT();
+                  stopTTS();
+                } else {
+                  // Activate voice mode and start listening
+                  setVoiceModeActive(true);
+                  startSTT();
+                }
+              }}
+              className={`shrink-0 ${
+                voiceModeActive
+                  ? isSpeaking
+                    ? "text-[#00d4ff] bg-[#00d4ff]/10"
+                    : "text-red-400 bg-red-500/10"
+                  : "text-[#6e6e8a]"
+              }`}
+              title={voiceModeActive ? "Voice mode active — click to stop" : "Click to start voice conversation"}
             >
-              {isListening ? <MicOff className="h-5 w-5 animate-pulse" /> : <Mic className="h-5 w-5" />}
+              {voiceModeActive ? (
+                isSpeaking ? (
+                  <span className="relative flex h-5 w-5 items-center justify-center">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#00d4ff] opacity-30" />
+                    <Mic className="h-5 w-5 relative z-10" />
+                  </span>
+                ) : (
+                  <MicOff className="h-5 w-5 animate-pulse" />
+                )
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
             </Button>
           )}
           <textarea

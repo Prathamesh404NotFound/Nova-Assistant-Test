@@ -3,9 +3,11 @@ import { useState, useRef, useCallback, useEffect } from "react";
 interface UseOfflineSTTOptions {
   onTranscript?: (text: string, isFinal: boolean) => void;
   lang?: string;
+  /** When true, recognition restarts automatically after each utterance. */
+  continuous?: boolean;
 }
 
-export function useOfflineSTT({ onTranscript, lang = "en-US" }: UseOfflineSTTOptions = {}) {
+export function useOfflineSTT({ onTranscript, lang = "en-US", continuous = false }: UseOfflineSTTOptions = {}) {
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(false);
   const [transcript, setTranscript] = useState("");
@@ -29,7 +31,7 @@ export function useOfflineSTT({ onTranscript, lang = "en-US" }: UseOfflineSTTOpt
     stop();
 
     const recognition = new SR();
-    recognition.continuous = false;
+    recognition.continuous = continuous;
     recognition.interimResults = true;
     recognition.lang = lang;
 
@@ -66,7 +68,16 @@ export function useOfflineSTT({ onTranscript, lang = "en-US" }: UseOfflineSTTOpt
     };
 
     recognition.onend = () => {
-      setIsListening(false);
+      // In continuous mode, auto-restart if still supposed to be listening
+      if (continuous && recognitionRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          setIsListening(false);
+        }
+      } else {
+        setIsListening(false);
+      }
     };
 
     try {
@@ -77,7 +88,7 @@ export function useOfflineSTT({ onTranscript, lang = "en-US" }: UseOfflineSTTOpt
     } catch {
       console.warn("[STT] Failed to start");
     }
-  }, [isSupported, lang]);
+  }, [isSupported, lang, continuous]);
 
   const stop = useCallback(() => {
     if (recognitionRef.current) {
