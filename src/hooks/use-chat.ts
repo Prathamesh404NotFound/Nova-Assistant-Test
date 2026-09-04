@@ -9,6 +9,7 @@ import { routeMessage, type AIRouterSource } from "@/ai/AIRouter";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { IntentRouter } from "@/services/ai/intent-router";
 import { responseCache } from "@/services/ai/response-cache";
+import { LocalConversationEngine } from "@/services/ai/local-conversation";
 import { agentOrchestrator } from "@/services/agent/AgentOrchestrator";
 import { type Intent } from "@/services/ai/types";
 import {
@@ -141,13 +142,11 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
           timestamp: Date.now(),
           isStreaming: true,
         },
-      ]);
-
-      // Build conversation history for context
-      const conversationHistory = messages.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      ]);        // Build conversation history for context (include current user message)
+        const conversationHistory = [...messages, userMsg].map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
 
       try {
         const mode = getAIMode();
@@ -235,6 +234,12 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         // Check if this request was aborted
         if (abortRef.current || activeRequestRef.current !== requestId) return;
 
+        // Handle empty response with local fallback
+        let finalText = response.text;
+        if (!finalText || finalText.trim().length === 0) {
+          finalText = LocalConversationEngine.generateResponse(content.trim());
+        }
+
         // Update with final response
         setLastSource(response.source);
 
@@ -243,7 +248,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
             m.id === assistantId
               ? {
                   ...m,
-                  content: response.text,
+                  content: finalText,
                   source: response.source,
                   latencyMs: response.latencyMs,
                   isStreaming: false,

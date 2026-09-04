@@ -9,6 +9,7 @@ import { getAIMode, type AIMode } from "./local/LocalAISettings";
 import { callGemini, streamGeminiResponse, classifyTask } from "@/lib/gemini";
 import { MemoryRetriever } from "@/services/memory/memory-retriever";
 import { unifiedMemory } from "@/services/memory/MemoryService";
+import { LocalConversationEngine } from "@/services/ai/local-conversation";
 
 export type AIRouterSource = "local" | "gemini";
 
@@ -145,7 +146,7 @@ async function routeToLocal(
  */
 async function buildMemoryAwarePrompt(userInput: string): Promise<string> {
   const BASE =
-    "You are Nova, a voice-first AI personal operating system. You are helpful, intelligent, and friendly. You help with daily tasks, answer questions, manage calendars, write emails, control smart home devices, and more. Keep responses concise and conversational.\n\nIMPORTANT RULES:\n- When the user asks you to remember something, confirm it was saved and do not pretend you can remember without the memory tool.\n- When asked to create a task, calendar event, or send an email, confirm the action was completed by the system — do NOT fabricate results.\n- Use the user's name and preferences when available.\n- Be direct: give the answer, then optionally ask if they want more detail.\n- If the user corrects something, update your understanding and acknowledge the correction.";
+    "You are Nova, a voice-first AI personal operating system. You are helpful, intelligent, and friendly. You help with daily tasks, answer questions, manage calendars, write emails, control smart home devices, and more. Keep responses concise and conversational.\n\nIMPORTANT RULES:\n- When the user asks you to remember something, confirm it was saved and do not pretend you can remember without the memory tool.\n- When asked to create a task, calendar event, or send an email, confirm the action was completed by the system — do NOT fabricate results.\n- Use the user's name and preferences when available.\n- Be direct: give the answer, then optionally ask if they want more detail.\n- CRITICAL: Match the user's language. If they write in Hindi (Devanagari script), respond entirely in Hindi. If they write in English, respond in English. If mixed, match their primary language.\n- Never reply in English when the user writes in Hindi or vice versa.\n- If the user corrects something, update your understanding and acknowledge the correction.";
 
   try {
     await unifiedMemory.initialize();
@@ -178,35 +179,40 @@ async function routeToGemini(
   let textResponse = "";
 
   // Build memory-aware system prompt in parallel with streaming start
-  const systemInstruction = await buildMemoryAwarePrompt(input);
-
-  try {
-    if (options?.onChunk) {
-      let accumulated = "";
-      await new Promise<void>((resolve, reject) => {
-        streamGeminiResponse({
-          messages: [{ role: "user", parts: [{ text: input }] }],
-          apiKey: geminiKey,
-          taskType: classifyTask(input),
-          systemInstruction,
-          onChunk: (chunk) => {
-            accumulated += chunk;
-            options.onChunk?.(accumulated);
-          },
-          onDone: () => resolve(),
-          onError: (err) => reject(err),
+  const systemInstruction = await buildMemoryAwarePrompt(input);    try {
+      if (options?.onChunk) {
+        let accumulated = "";
+        await new Promise<void>((resolve, reject) => {
+          streamGeminiResponse({
+            messages: [{ role: "user", parts: [{ text: input }] }],
+            apiKey: geminiKey,
+            taskType: classifyTask(input),
+            systemInstruction,
+            onChunk: (chunk) => {
+              accumulated += chunk;
+              options.onChunk?.(accumulated);
+            },
+            onDone: () => resolve(),
+            onError: (err) => reject(err),
+          });
         });
-      });
-      textResponse = accumulated;
-    } else {
-      textResponse = await callGemini(geminiKey, input, systemInstruction, classifyTask(input));
+        textResponse = accumulated;
+      } else {
+        textResponse = await callGemini(geminiKey, input, systemInstruction, classifyTask(input));
+      }
+    } catch (err) {
+      // On Gemini failure, fall back to local conversation engine for basic response
+      const fallbackText = LocalConversationEngine.generateResponse(input);
+      textResponse = fallbackText || `Gemini is unavailable right now (${
+        err instanceof Error ? err.message : "offline"
+      }). Try enabling Local AI in Settings.`;
     }
-  } catch (err) {
-    textResponse = `Gemini is unavailable right now (${
-      err instanceof Error ? err.message : "offline"
-    }). Try enabling Local AI in Settings.`;
-  }
 
-  const latencyMs = Math.round(performance.now() - startTime);
-  return { text: textResponse, source: "gemini", latencyMs };
+    // Handle empty responses — fall back to local conversation engine
+    if (!textResponse || textResponse.trim().length === 0) {
+      textResponse = LocalConversationEngine.generateResponse(input) || "I'm not sure how to respond to that. Can you try rephrasing?";
+    }
+
+    const latencyMs = Math.round(performance.now() - startTime);
+    return { text: textResponse, source: "gemini", latencyMs };
 }
