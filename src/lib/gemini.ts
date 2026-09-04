@@ -61,6 +61,10 @@ const GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 let verifiedModel: string | null = null;
 let verifiedCodeModel: string | null = null;
 
+// Cache resolved API key to avoid repeated localStorage reads (~5ms saved per call)
+let _cachedApiKey: string | null = null;
+let _cachedApiKeySource: string | null = null;
+
 // ── Timeout Configuration ──────────────────────────────────────
 const REQUEST_TIMEOUT_MS = 30_000; // 30s for non-streaming
 const STREAM_TIMEOUT_MS = 60_000;   // 60s max streaming window
@@ -82,11 +86,21 @@ function cleanResponse(text: string): string {
 // ── Key Resolution ──────────────────────────────────────────────
 function resolveApiKey(overrideKey?: string): string {
   if (overrideKey && overrideKey.length > 10) return overrideKey;
+  // Use cached key if available (avoids repeated localStorage reads)
+  if (_cachedApiKey && _cachedApiKeySource === "env") return _cachedApiKey;
   const envKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || "";
-  if (envKey && envKey.length > 10) return envKey;
+  if (envKey && envKey.length > 10) {
+    _cachedApiKey = envKey;
+    _cachedApiKeySource = "env";
+    return envKey;
+  }
   if (typeof localStorage !== "undefined") {
     const stored = localStorage.getItem("nova_gemini_key") || "";
-    if (stored && stored.length > 10) return stored;
+    if (stored && stored.length > 10) {
+      _cachedApiKey = stored;
+      _cachedApiKeySource = "localstorage";
+      return stored;
+    }
   }
   return "";
 }

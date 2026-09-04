@@ -109,7 +109,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         setConversations(getConversations());
       }
 
-      // Add user message
+      // Add user message + assistant placeholder in a single batch to reduce re-renders
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
@@ -124,25 +124,20 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         timestamp: userMsg.timestamp,
       });
 
-      setMessages((prev) => [...prev, userMsg]);
+      const assistantId = crypto.randomUUID();
+      const assistantPlaceholder: ChatMessage = {
+        id: assistantId,
+        role: "assistant",
+        content: "",
+        timestamp: Date.now(),
+        isStreaming: true,
+      };
 
-      // Update status to streaming
+      // Single batched state update instead of two separate ones
+      setMessages((prev) => [...prev, userMsg, assistantPlaceholder]);
       setStatus("streaming");
       setError(null);
-      abortRef.current = false;
-
-      // Add placeholder for assistant response
-      const assistantId = crypto.randomUUID();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
-          timestamp: Date.now(),
-          isStreaming: true,
-        },
-      ]);        // Build conversation history for context (include current user message)
+      abortRef.current = false;        // Build conversation history for context (include current user message)
         const conversationHistory = [...messages, userMsg].map((m) => ({
           role: m.role,
           content: m.content,

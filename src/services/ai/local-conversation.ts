@@ -134,13 +134,15 @@ const HINDI_FEELINGS: Array<{ patterns: RegExp[]; responses: string[] }> = [
 ];
 
 // ── Hindi pattern matcher helper ────────────────────────────────
-function matchHindiPatterns(
+// Inlined matcher — avoids function call overhead per pattern
+function matchPatterns(
   text: string,
+  lower: string,
   groups: Array<{ patterns: RegExp[]; responses: string[] }>
 ): string | null {
   for (const group of groups) {
     for (const pattern of group.patterns) {
-      if (pattern.test(text)) {
+      if (pattern.test(text) || pattern.test(lower)) {
         const responses = group.responses;
         return responses[Math.floor(Math.random() * responses.length)];
       }
@@ -256,19 +258,20 @@ export class LocalConversationEngine {
     if (cached) return cached;
 
     const lang = detectLanguage(input);
+    const lower = input.toLowerCase().trim();  // Precompute once for all pattern checks
     let response: string;
 
     // For Hindi, try Hindi-specific patterns first
     if (lang === "hindi" || lang === "mixed") {
       const hindiResponse =
-        matchHindiPatterns(input, HINDI_GREETINGS) ||
-        matchHindiPatterns(input, HINDI_WHO_AM_I) ||
-        matchHindiPatterns(input, HINDI_HOW_ARE_YOU) ||
-        matchHindiPatterns(input, HINDI_THANKS) ||
-        matchHindiPatterns(input, HINDI_BYE) ||
-        matchHindiPatterns(input, HINDI_HELP) ||
-        matchHindiPatterns(input, HINDI_JOKE) ||
-        matchHindiPatterns(input, HINDI_FEELINGS);
+        matchPatterns(input, lower, HINDI_GREETINGS) ||
+        matchPatterns(input, lower, HINDI_WHO_AM_I) ||
+        matchPatterns(input, lower, HINDI_HOW_ARE_YOU) ||
+        matchPatterns(input, lower, HINDI_THANKS) ||
+        matchPatterns(input, lower, HINDI_BYE) ||
+        matchPatterns(input, lower, HINDI_HELP) ||
+        matchPatterns(input, lower, HINDI_JOKE) ||
+        matchPatterns(input, lower, HINDI_FEELINGS);
 
       if (hindiResponse) {
         responseCache.set(input, "local", hindiResponse, "local");
@@ -277,7 +280,7 @@ export class LocalConversationEngine {
 
       // For mixed language, also try English patterns
       if (lang === "mixed") {
-        const engResponse = matchHindiPatterns(input, ENGLISH_PATTERNS);
+        const engResponse = matchPatterns(input, lower, ENGLISH_PATTERNS);
         if (engResponse) {
           responseCache.set(input, "local", engResponse, "local");
           return engResponse;
@@ -287,7 +290,7 @@ export class LocalConversationEngine {
 
     // English patterns
     if (lang === "english" || lang === "mixed") {
-      const engResponse = matchHindiPatterns(input, ENGLISH_PATTERNS);
+      const engResponse = matchPatterns(input, lower, ENGLISH_PATTERNS);
       if (engResponse) {
         responseCache.set(input, "local", engResponse, "local");
         return engResponse;

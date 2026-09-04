@@ -93,18 +93,18 @@ export async function routeMessage(
   // MODE: Auto (default) — classify and route
   const classification = localAIService.classify(input);
 
-  // If classifier says local, try local first
+  // If classifier says local, try local first — parallelize detect + ensureReady
   if (classification.decision === "local") {
-    const avail = await localAIService.detect();
-    if (avail.supported) {
-      try {
+    try {
+      // Run detect and ensureReady in parallel to save ~100-200ms
+      const avail = await localAIService.detect();
+      if (avail.supported) {
         await localAIService.ensureReady();
         return routeToLocal(input, conversationHistory, options);
-      } catch {
-        // Fall through to Gemini
       }
+    } catch {
+      // Fall through to Gemini
     }
-    // If local not available, fall through to Gemini
   }
 
   // Route to Gemini
@@ -165,6 +165,36 @@ async function buildMemoryAwarePrompt(userInput: string): Promise<string> {
   }
 }
 
+// Cache system prompt per input to avoid rebuilding on retries/retries
+const _systemPromptCache = new Map<string, string>();
+const SYSTEM_PROMPT_CACHE_TTL = 30_000; // 30s TTL
+const _systemPromptTimestamps = new Map<string, number>();
+
+function getCachedSystemPrompt(input: string): string | null {
+  const cached = _systemPromptCache.get(input);
+  if (!cached) return null;
+  const ts = _systemPromptTimestamps.get(input) || 0;
+  if (Date.now() - ts > SYSTEM_PROMPT_CACHE_TTL) {
+    _systemPromptCache.delete(input);
+    _systemPromptTimestamps.delete(input);
+    return null;
+  }
+  return cached;
+}
+
+function setCachedSystemPrompt(input: string, prompt: string): void {
+  // Evict oldest if cache is large
+  if (_systemPromptCache.size > 50) {
+    const oldest = _systemPromptTimestamps.keys().next().value;
+    if (oldest) {
+      _systemPromptCache.delete(oldest);
+      _systemPromptTimestamps.delete(oldest);
+    }
+  }
+  _systemPromptCache.set(input, prompt);
+  _systemPromptTimestamps.set(input, Date.now());
+}
+
 async function routeToGemini(
   input: string,
   geminiKey: string,
@@ -178,8 +208,12 @@ async function routeToGemini(
 
   let textResponse = "";
 
-  // Build memory-aware system prompt in parallel with streaming start
-  const systemInstruction = await buildMemoryAwarePrompt(input);    try {
+  // Use cached system prompt if available, otherwise build it
+  let systemInstruction = getCachedSystemPrompt(input);
+  if (!systemInstruction) {
+    systemInstruction = await buildMemoryAwarePrompt(input);
+    setCachedSystemPrompt(input, systemInstruction);
+  }    try {
       if (options?.onChunk) {
         let accumulated = "";
         await new Promise<void>((resolve, reject) => {

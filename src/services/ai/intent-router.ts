@@ -106,17 +106,17 @@ export class IntentRouter {
     }
 
     // 2. GREETINGS & SIMPLE GREETING ALIASES (English + Hindi)
-    const greetings = [
+    // Use Set for O(1) lookup instead of Array.includes
+    const GREETINGS_SET = new Set([
       "hello", "hi", "hey", "hey nova", "hello nova", "hi nova",
       "good morning", "good night", "good evening", "good afternoon",
       "how are you", "how are you doing", "what is your name", "who are you",
       "thank you", "thanks", "bye", "goodbye", "are you there", "repeat that",
-      // Hindi greetings (romanized)
       "namaste", "namaskar", "kaise ho", "kaise hai",
       "kya hal hai", "tumhara naam kya hai", "aap kaun hai",
       "shukriya", "dhanyavaad", "alvida", "theek hai",
       "subah ki namaskar",
-    ];
+    ]);
 
     // Hindi greeting patterns (use literal Devanagari characters)
     const hindiGreetingPatterns = [
@@ -134,8 +134,8 @@ export class IntentRouter {
 
     const normalizedLower = normalizeForRouting(raw).toLowerCase();
     if (
-      greetings.includes(lower) ||
-      greetings.includes(normalizedLower) ||
+      GREETINGS_SET.has(lower) ||
+      GREETINGS_SET.has(normalizedLower) ||
       /^hey nova|^hello nova|^hi nova/i.test(lower) ||
       hindiGreetingPatterns.some((p) => p.test(raw)) ||
       hindiGreetingPatterns.some((p) => p.test(normalizedLower))
