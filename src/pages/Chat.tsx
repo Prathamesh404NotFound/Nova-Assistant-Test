@@ -6,6 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { type AvatarState } from "@/components/nova/avatar";
 import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
 import { VOICE_STATE_TO_SPRITE, type NovaSpriteState } from "@/config/novaSprites";
+import {
+  EmotionHoldQueue,
+  circadianBaseline,
+  detectCorrection,
+  sentimentToEmotion,
+  type NovaEmotion,
+} from "@/services/nova/expression-engine";
 import { useOfflineSTT, type STTError } from "@/hooks/use-offline-stt";
 import { ttsRouter } from "@/services/tts/tts-router";
 import { useChat } from "@/hooks/use-chat";
@@ -13,6 +20,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
+import { addMemory } from "@/lib/rtdb";
+import { permissionsService } from "@/services/permissions";
 import ReactMarkdown from "react-markdown";
 import { Collaboration } from "@/components/Collaboration";
 import { ExportChat } from "@/components/ExportChat";
@@ -197,6 +206,52 @@ export default function Chat() {
   // Sprite follows the voice state via the centralized registry
   const spriteState: NovaSpriteState = VOICE_STATE_TO_SPRITE[voiceState] ?? "idle";
 
+  // ── Expression engine (hold-queue, halo, shimmer, celebrations) ──
+  const emotionQueueRef = useRef<EmotionHoldQueue | null>(null);
+  if (!emotionQueueRef.current) emotionQueueRef.current = new EmotionHoldQueue(circadianBaseline());
+  const emotionQueue = emotionQueueRef.current;
+
+  const [emotion, setEmotion] = useState<NovaEmotion>(() => circadianBaseline());
+  const [shimmerOn, setShimmerOn] = useState(false);
+
+  useEffect(() => {
+    const unsub = emotionQueue.subscribe((e) => setEmotion(e));
+    return () => {
+      unsub();
+      emotionQueue.dispose();
+    };
+  }, [emotionQueue]);
+
+  // Voice-state → performable emotion (curiosity tilt while listening, focus while generating)
+  useEffect(() => {
+    if (voiceState === "listening") emotionQueue.express("curiosity");
+    else if (voiceState === "speaking") emotionQueue.express("joy");
+  }, [voiceState, emotionQueue]);
+
+  // React to the latest user message: empathy halo, humble recalibration
+  const lastUserMsgRef = useRef<string>("");
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+  useEffect(() => {
+    if (!lastUserMessage || lastUserMessage.id === lastUserMsgRef.current) return;
+    lastUserMsgRef.current = String(lastUserMessage.id);
+    const text = typeof lastUserMessage.content === "string" ? lastUserMessage.content : "";
+    if (detectCorrection(text)) {
+      emotionQueue.express("humble");
+      setShimmerOn(true);
+      const t = setTimeout(() => setShimmerOn(false), 700);
+      return () => clearTimeout(t);
+    }
+    emotionQueue.express(sentimentToEmotion(text));
+  }, [lastUserMessage, emotionQueue]);
+
+  // Focused computation face while streaming (§5 thought particles via cue)
+  useEffect(() => {
+    if (isStreaming) emotionQueue.express("processing");
+    else if (!isSpeaking && !isListening && emotionQueue.currentEmotion === "processing") {
+      emotionQueue.express(circadianBaseline());
+    }
+  }, [isStreaming, isSpeaking, isListening, emotionQueue]);
+
   useEffect(() => {
     const state: AvatarState =
       voiceState === "error" ? "error"
@@ -220,10 +275,43 @@ export default function Chat() {
     };
   }, []);
 
+  // "Remember that ..." → save to the Memory panel (requires memory_saving permission).
+  const REMEMBER_RE = /^(?:remember|note)\s+(?:that\s+)?(.+)$/i;
+
+  const trySaveMemory = useCallback(
+    async (text: string): Promise<boolean> => {
+      const match = REMEMBER_RE.exec(text.trim());
+      if (!match || !userId) return false;
+      if (!permissionsService.isGranted("memory_saving")) {
+        logActivity("memory", "Memory save blocked — grant Memory Saving in Settings → Security", "lock");
+        return false;
+      }
+      const content = match[1].trim();
+      if (!content) return false;
+      // Split "key: content" if present, else use the first few words as key.
+      const sepIdx = content.indexOf(":");
+      const key = sepIdx > 0 && sepIdx < 48 ? content.slice(0, sepIdx).trim() : content.split(/\s+/).slice(0, 5).join(" ");
+      const body = sepIdx > 0 && sepIdx < 48 ? content.slice(sepIdx + 1).trim() : content;
+      const isPerson = /\b(my (friend|wife|husband|mom|dad|sister|brother|colleague)|meets?|called)\b/i.test(content);
+      const isPref = /\b(i (like|love|prefer|hate|don't like)|i always|i never|my favorite)\b/i.test(content);
+      const category = isPref ? "preference" : isPerson ? "person" : "note";
+      try {
+        await addMemory(userId, { category, key, content: body || content });
+        logActivity("memory", `Saved memory: ${key}`, "brain");
+        return true;
+      } catch (err) {
+        console.warn("[MEMORY] Failed to save memory from chat:", err);
+        return false;
+      }
+    },
+    [userId]
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
     logActivity("chat", `Sent: "${input.trim().slice(0, 40)}"`, "send");
+    void trySaveMemory(input);
     sendMessage(input);
     setInput("");
   };
@@ -290,7 +378,13 @@ export default function Chat() {
           >
             {showSidebar ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
-          <SpriteNovaAvatar state={spriteState} size={40} glow={false} />
+          <SpriteNovaAvatar
+            emotion={voiceState === "error" ? undefined : emotion}
+            state={voiceState === "error" ? "error" : spriteState}
+            size={40}
+            glow={false}
+            shimmer={shimmerOn}
+          />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-white">Nova Hybrid OS</h1>
@@ -456,7 +550,13 @@ export default function Chat() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto py-8">
-            <SpriteNovaAvatar state="idle" size={90} glow />
+            <SpriteNovaAvatar
+              emotion={isStreaming ? "processing" : emotion}
+              state="idle"
+              size={90}
+              glow
+              shimmer={shimmerOn}
+            />
             <h2 className="text-lg font-bold text-[#e0ecf5] mt-4">Nova Personal Operating System</h2>
               <p className="text-[#5a7a9a] mt-2 text-sm max-w-md">
                 {aiMode === "local"

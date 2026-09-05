@@ -36,25 +36,41 @@ export default function MemoryPage() {
   const userId = user?.uid ?? "";
 
   const refresh = useCallback(async () => {
-    if (!userId) return;
-    const m = await getMemories(userId);
-    setMemories(m);
+    if (!userId) {
+      setMemories([]);
+      return;
+    }
+    try {
+      const m = await getMemories(userId);
+      setMemories(m);
+    } catch (err) {
+      console.warn("[MEMORY] Failed to load memories:", err);
+      setMemories([]);
+    }
   }, [userId]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const addNew = useCallback(async () => {
     if (!newKey.trim() || !newContent.trim() || !userId) return;
-    await addMemory(userId, { category: newCategory, key: newKey.trim(), content: newContent.trim() });
-    logActivity("memory", `Saved memory: ${newKey.trim()}`, "brain");
-    setNewKey(""); setNewContent(""); setShowNew(false);
-    await refresh();
+    try {
+      await addMemory(userId, { category: newCategory, key: newKey.trim(), content: newContent.trim() });
+      logActivity("memory", `Saved memory: ${newKey.trim()}`, "brain");
+      setNewKey(""); setNewContent(""); setShowNew(false);
+      await refresh();
+    } catch (err) {
+      console.warn("[MEMORY] Failed to save memory:", err);
+    }
   }, [newKey, newContent, newCategory, userId, refresh]);
 
   const remove = useCallback(async (id: string) => {
     if (!userId) return;
     const mem = memories.find((m) => m.id === id);
-    await deleteMemory(userId, id);
+    try {
+      await deleteMemory(userId, id);
+    } catch (err) {
+      console.warn("[MEMORY] Failed to delete memory:", err);
+    }
     if (mem) logActivity("memory", `Deleted memory: ${mem.key}`, "trash");
     await refresh();
   }, [userId, memories, refresh]);
