@@ -332,7 +332,7 @@ export async function streamGeminiResponse({
       generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: 2048 },
     };
 
-    const url = `${GEMINI_API_BASE}/models/${model}:streamGenerateContent?key=${effectiveKey}`;
+    const url = `${GEMINI_API_BASE}/models/${model}:streamGenerateContent?alt=sse`;
     // Use AbortController for timeout
     const streamAbort = new AbortController();
     const streamTimer = setTimeout(() => streamAbort.abort(), STREAM_TIMEOUT_MS);
@@ -341,7 +341,7 @@ export async function streamGeminiResponse({
     try {
       response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
         body: JSON.stringify(body),
         signal: streamAbort.signal,
       });
@@ -364,10 +364,10 @@ export async function streamGeminiResponse({
         if (fallbackModel) {
           verifiedModel = null;
           verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${fallbackModel}:streamGenerateContent?key=${effectiveKey}`;
+          const retryUrl = `${GEMINI_API_BASE}/models/${fallbackModel}:streamGenerateContent?alt=sse`;
           const retryResponse = await fetch(retryUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
             body: JSON.stringify(body),
             signal: streamAbort.signal,
           });
@@ -387,10 +387,10 @@ export async function streamGeminiResponse({
         if (retryModel) {
           verifiedModel = null;
           verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:streamGenerateContent?key=${effectiveKey}`;
+          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:streamGenerateContent?alt=sse`;
           const retryResponse = await fetch(retryUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
             body: JSON.stringify(body),
             signal: streamAbort.signal,
           });
@@ -489,12 +489,12 @@ export async function callGemini(
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
 
-    const url = `${GEMINI_API_BASE}/models/${model}:generateContent?key=${effectiveKey}`;
+    const url = `${GEMINI_API_BASE}/models/${model}:generateContent`;
     let response: Response;
     try {
       response = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -521,11 +521,11 @@ export async function callGemini(
         if (fallbackModel) {
           verifiedModel = null;
           verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${fallbackModel}:generateContent?key=${effectiveKey}`;
+          const retryUrl = `${GEMINI_API_BASE}/models/${fallbackModel}:generateContent`;
           try {
             const retryResponse = await fetch(retryUrl, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
               body: JSON.stringify({
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
                 systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -549,11 +549,11 @@ export async function callGemini(
         if (retryModel) {
           verifiedModel = null;
           verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:generateContent?key=${effectiveKey}`;
+          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:generateContent`;
           try {
             const retryResponse = await fetch(retryUrl, {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
               body: JSON.stringify({
                 contents: [{ role: "user", parts: [{ text: prompt }] }],
                 systemInstruction: { parts: [{ text: systemInstruction }] },
@@ -595,10 +595,10 @@ export async function callSpecializedModel(
   const effectiveKey = resolveApiKey(apiKey);
   if (!effectiveKey) throw new Error("No Gemini API key configured.");
 
-  const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent?key=${effectiveKey}`;
+  const url = `${GEMINI_API_BASE}/models/${modelId}:generateContent`;
   const response = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
     body: JSON.stringify({
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       ...(systemInstruction && { systemInstruction: { parts: [{ text: systemInstruction }] } }),
