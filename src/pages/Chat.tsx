@@ -13,6 +13,15 @@ import {
   sentimentToEmotion,
   type NovaEmotion,
 } from "@/services/nova/expression-engine";
+import {
+  recordTaskDebt,
+  addAssumptions,
+  rejectAssumption,
+  getAssumptions,
+  scheduleFutureLetter,
+  type AssumptionRecord,
+  WHISPER_NOTICE,
+} from "@/services/nova/labs";
 import { useOfflineSTT, type STTError } from "@/hooks/use-offline-stt";
 import { ttsRouter } from "@/services/tts/tts-router";
 import { useChat } from "@/hooks/use-chat";
@@ -262,6 +271,56 @@ export default function Chat() {
     setAvatarState(state);
   }, [voiceState]);
 
+  // ── Nova Labs: whisper mode + assumption ledger ──
+  const [whisperMode, setWhisperMode] = useState(false);
+  const [assumptionsByMessage, setAssumptionsByMessage] = useState<Record<string, AssumptionRecord[]>>({});
+
+  const toggleAssumption = (rec: AssumptionRecord) => {
+    if (rec.rejected) return;
+    rejectAssumption(rec.id);
+    setAssumptionsByMessage((prev) => ({
+      ...prev,
+      [rec.messageId]: (prev[rec.messageId] ?? []).map((a) =>
+        a.id === rec.id ? { ...a, rejected: true } : a
+      ),
+    }));
+    emotionQueue.express("humble");
+    setShimmerOn(true);
+    setTimeout(() => setShimmerOn(false), 700);
+  };
+
+  // Record assumption chips + time-debt for the latest assistant reply
+  const lastAssistantMsgRef = useRef<string>("");
+  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant" && m.content);
+  useEffect(() => {
+    if (!lastAssistantMessage || whisperMode) return;
+    if (lastAssistantMessage.id === lastAssistantMsgRef.current) return;
+    lastAssistantMsgRef.current = lastAssistantMessage.id;
+    // Assumption chips from simple heuristic detection in the reply
+    const texts: string[] = [];
+    const am = /\bI(?:'m| am) (?:assuming|guessing) ([^.!?]*)/i.exec(lastAssistantMessage.content);
+    if (am) texts.push(`I assumed: ${am[1].trim()}`);
+    if (texts.length > 0) {
+      const recs = addAssumptions(lastAssistantMessage.id, texts);
+      setAssumptionsByMessage((prev) => ({ ...prev, [lastAssistantMessage.id]: recs }));
+    }
+    // Time-debt ledger: estimate manual cost for substantial replies
+    if (lastAssistantMessage.content.length > 400) {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      recordTaskDebt(lastUser?.content ?? lastAssistantMessage.content);
+    }
+  }, [lastAssistantMessage, messages, whisperMode]);
+
+  // Time-debt for user tasks even without long replies
+  useEffect(() => {
+    if (whisperMode || !lastUserMessage) return;
+    if (lastUserMsgRef.current !== String(lastUserMessage.id)) return;
+    const text = typeof lastUserMessage.content === "string" ? lastUserMessage.content : "";
+    if (/\b(?:help me|research|summar|write|draft|plan|compare)\b/i.test(text) && text.length > 30) {
+      recordTaskDebt(text);
+    }
+  }, [lastUserMessage, whisperMode]);
+
   // Refresh mode when chat mounts
   useEffect(() => {
     setAiMode(getAIMode());
@@ -310,9 +369,23 @@ export default function Chat() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
-    logActivity("chat", `Sent: "${input.trim().slice(0, 40)}"`, "send");
-    void trySaveMemory(input);
-    sendMessage(input);
+    const text = input.trim();
+    if (whisperMode) {
+      // Zero retention: no activity log, no memory save, no conversation persistence
+      sendMessage(text);
+      setInput("");
+      setWhisperMode(false);
+      return;
+    }
+    // Future-Self Letters (Nova Labs §4): "mail my future self …" schedules a letter
+    const futureSelfMatch = /^mail my future self[:,]?\s*(.+)/i.exec(text);
+    if (futureSelfMatch && futureSelfMatch[1].trim()) {
+      scheduleFutureLetter(futureSelfMatch[1].trim(), Date.now() + 14 * 864e5);
+      logActivity("labs", "Scheduled a future-self letter (delivering in 2 weeks)", "mail");
+    }
+    logActivity("chat", `Sent: "${text.slice(0, 40)}"`, "send");
+    void trySaveMemory(text);
+    sendMessage(text);
     setInput("");
   };
 
@@ -684,6 +757,29 @@ export default function Chat() {
                     )}
                   </div>
                 )}
+                {/* Assumption Ledger chips (Nova Labs §2) */}
+                {msg.role === "assistant" && !msg.isStreaming && (assumptionsByMessage[msg.id]?.length ?? 0) > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(assumptionsByMessage[msg.id] ?? []).map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => toggleAssumption(a)}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                          a.rejected
+                            ? "bg-[#fb7185]/15 border-[#fb7185]/30 text-[#fb7185] line-through"
+                            : "bg-[#a78bfa]/10 border-[#a78bfa]/30 text-[#c4b5fd] hover:bg-[#a78bfa]/20"
+                        }`}
+                        title={a.rejected ? "Corrected" : "Tap to correct this assumption"}
+                      >
+                        {a.rejected ? "✗ corrected · " : "🤔 "}{a.text}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Whisper zero-retention notice (Nova Labs §6) */}
+                {msg.content?.startsWith("👻") && (
+                  <p className="mt-2 text-[10px] font-mono text-[#6e6e8a] italic">{WHISPER_NOTICE}</p>
+                )}
               </Card>
             </motion.div>
           ))}
@@ -733,6 +829,17 @@ export default function Chat() {
               )}
             </Button>
           )}
+          {/* Whisper (zero-retention) toggle — Nova Labs §6 */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setWhisperMode((v) => !v)}
+            className={`shrink-0 ${whisperMode ? "text-[#a78bfa] bg-[#a78bfa]/10" : "text-[#6e6e8a]"}`}
+            title={whisperMode ? "Whisper mode ON — messages will not be saved" : "Whisper mode: send this message without saving it anywhere"}
+          >
+            👻
+          </Button>
           <textarea
             ref={inputRef}
             value={input}

@@ -17,6 +17,16 @@ import { localAIService } from "@/ai/local/LocalAIService";
 import { getTasks } from "@/lib/rtdb";
 import { getMemories } from "@/lib/rtdb";
 import { getConversations } from "@/lib/local-store";
+import {
+  getTimeDebtRollup,
+  getFrictionSuggestion,
+  dismissFrictionRule,
+  getDueLetters,
+  markLetterRead,
+  getAssumptions,
+  type FrictionSuggestion,
+  type FutureLetter,
+} from "@/services/nova/labs";
 import { logActivity } from "@/lib/local-store";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import {
@@ -94,6 +104,16 @@ export default function Dashboard() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [geminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "");
   const [showLocalAIDownload, setShowLocalAIDownload] = useState(false);
+  // ── Nova Labs insights ──
+  const debtRollup = getTimeDebtRollup();
+  const [friction, setFriction] = useState<FrictionSuggestion | null>(null);
+  const [dueLetter, setDueLetter] = useState<FutureLetter | null>(null);
+  useEffect(() => {
+    setFriction(getFrictionSuggestion());
+    const letters = getDueLetters();
+    setDueLetter(letters[0] ?? null);
+    if (letters[0]) markLetterRead(letters[0].id);
+  }, []);
   const [localAIAvailable, setLocalAIAvailable] = useState<boolean | null>(null);
   const [localAICached, setLocalAICached] = useState(false);
   const [taskCount, setTaskCount] = useState(0);
@@ -352,6 +372,56 @@ export default function Dashboard() {
             </div>
           </motion.div>
         </div>
+
+        {/* ── Nova Labs Insights ───────────────────────── */}
+        {(debtRollup.totalMinutes > 0 || friction || dueLetter || getAssumptions().some((a) => a.rejected)) && (
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3} className="col-span-12">
+            <div className="jarvis-card p-4">
+              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Nova Labs Insights</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                  <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-1">Time Reclaimed</p>
+                  <p className="text-lg font-bold font-mono text-[#10b981]">
+                    {debtRollup.totalMinutes >= 60
+                      ? `${(debtRollup.totalMinutes / 60).toFixed(1)}h`
+                      : `${debtRollup.totalMinutes}m`}
+                  </p>
+                  <p className="text-[10px] text-[#5a7a9a]">
+                    {debtRollup.topCategories.length > 0
+                      ? `Top: ${debtRollup.topCategories[0].category}`
+                      : "Tasks Nova handled for you"}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                  <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-1">Friction Detected</p>
+                  {friction ? (
+                    <>
+                      <p className="text-xs text-[#c8d6e5] leading-snug">{friction.message}</p>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => { dismissFrictionRule(friction.rule); setFriction(null); }}
+                          className="text-[10px] text-[#5a7a9a] hover:text-[#c8d6e5]"
+                        >Dismiss</button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-[#5a7a9a]">Nothing friction-worthy detected yet.</p>
+                  )}
+                </div>
+                <div className="p-3 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                  <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-1">From Your Past Self</p>
+                  {dueLetter ? (
+                    <p className="text-xs text-[#c8d6e5] leading-snug line-clamp-3">✉️ {dueLetter.body}</p>
+                  ) : (
+                    <p className="text-[11px] text-[#5a7a9a]">
+                      No letters due. Ask Nova in chat: “mail my future self …”
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* ── Second Row ───────────────────────────────── */}
         <div className="grid grid-cols-12 gap-4">

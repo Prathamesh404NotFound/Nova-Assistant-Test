@@ -91,6 +91,19 @@ any message starting with **"remember …"** (e.g. "Remember that my meeting is 
 is saved to your memory panel automatically, categorized as a note/preference/person.
 Memory saving requires the `memory_saving` permission (enabled by default).
 
+## Nova Labs
+
+Six novel assistant features live in `src/services/nova/labs.ts` (localStorage-persisted, device-local, no new dependencies):
+
+1. **Time-Debt Auditor** — every chat task is logged with an estimated manual-duration; the Dashboard shows how much time Nova has reclaimed.
+2. **Assumption Ledger** — Nova surfaces assumptions as dismissible chips under her reply; rejecting one tunes future behavior.
+3. **Proactive Friction Detector** — scans your activity log for repeated manual patterns and surfaces one suggestion per day on the Dashboard (dismissing a rule lowers its weight).
+4. **Future-Self Letters** — say *"mail my future self …"* in chat; the letter is scheduled and delivered on the Dashboard two weeks later, styled "from your past self."
+5. **Session Storyboard** — `buildSessionStoryboard()` compresses recent activity into a 6-panel reflective summary.
+6. **Ephemeral Whisper Mode** — the ghost toggle in the chat input sends a message that is processed but never persisted anywhere (no history, memory, or activity logs), with an on-screen zero-retention notice.
+
+Dashboard → **Nova Labs Insights** shows the time-reclaimed rollup, today's friction suggestion, and any due letters.
+
 ## Scripts
 
 ```bash
@@ -108,3 +121,4 @@ bun run lint     # typecheck
 - Added `PermissionsService` and a Settings → Security permission panel with Grant All.
 - Chat now saves "remember …" messages to the memory panel (permission-gated).
 - Hardened Memory page add/delete against Firebase failures and signed-out state.
+- Added **Nova Labs** (`src/services/nova/labs.ts`): Time-Debt Auditor, Assumption Ledger, Friction Detector, Future-Self Letters, Session Storyboard, and Ephemeral Whisper mode — wired into Chat and a new Dashboard Insights card.
