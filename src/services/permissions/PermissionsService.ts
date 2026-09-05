@@ -155,7 +155,7 @@ class PermissionsService {
     if (def?.browserPermission) {
       const ok = await requestBrowserPermission(def.browserPermission);
       // Record user intent even if the browser prompt was dismissed/blocked.
-      this.set(id, ok || this.map[id] === true ? true : ok);
+      this.set(id, ok || this.map[id] === true);
       return ok;
     }
     this.set(id, true);

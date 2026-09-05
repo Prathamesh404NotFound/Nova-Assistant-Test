@@ -3,7 +3,9 @@ import { useNavigate } from "react-router";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { NovaAvatar, type AvatarState } from "@/components/nova/avatar";
+import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
+import { VOICE_STATE_TO_SPRITE } from "@/config/novaSprites";
+import type { AvatarState } from "@/components/nova/avatar";
 import { StatusIndicator } from "@/components/nova/status-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { useWakeWord } from "@/hooks/use-wake-word";
@@ -294,7 +296,12 @@ export default function Dashboard() {
             <div className="jarvis-card p-8 jarvis-glow-cyan">
               <div className="flex flex-col items-center gap-4">
                 <div className="relative cursor-pointer" onClick={handleVoiceToggle}>
-                  <NovaAvatar state={avatarState} size={160} />
+                  <SpriteNovaAvatar
+                    state={VOICE_STATE_TO_SPRITE[avatarState] ?? "idle"}
+                    size={180}
+                    glow
+                    label={`Nova ${avatarState}`}
+                  />
                   {!isSupported && (
                     <p className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-xs text-[#f59e0b] whitespace-nowrap">
                       Voice not supported

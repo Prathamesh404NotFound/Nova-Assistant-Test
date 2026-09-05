@@ -212,6 +212,43 @@ class SecurityLayerImpl {
 
   init(): void {
     this.loadGrants();
+    this.seedDefaultGrants();
+  }
+
+  /**
+   * Seed persistent grants for safe, local-only capabilities so everyday
+   * actions (calendar writes, task/memory updates, notifications) never hit
+   * PERMISSION_DENIED without an explicit user prompt. High-risk capabilities
+   * (email.send, file.*, desktop.*, automation.execute) still require an
+   * explicit grant or confirmation flow.
+   */
+  private seedDefaultGrants(): void {
+    const defaults: PermissionCapability[] = [
+      "calendar.read",
+      "calendar.write",
+      "task.read",
+      "task.write",
+      "memory.read",
+      "memory.write",
+      "notification.send",
+      "browser.read",
+      "network.access",
+    ];
+    let changed = false;
+    for (const cap of defaults) {
+      const grants = this.grants.get(cap) || [];
+      if (!grants.some((g) => g.grantType === "always")) {
+        grants.push({
+          capability: cap,
+          grantType: "always",
+          grantedAt: Date.now(),
+          source: "system",
+        });
+        this.grants.set(cap, grants);
+        changed = true;
+      }
+    }
+    if (changed) this.saveGrants();
   }
 
   setViolationHandler(handler: (v: SecurityViolation) => void): void {

@@ -104,6 +104,21 @@ Six novel assistant features live in `src/services/nova/labs.ts` (localStorage-p
 
 Dashboard → **Nova Labs Insights** shows the time-reclaimed rollup, today's friction suggestion, and any due letters.
 
+## Vision — Face Recognition & Object Detection
+
+The **Vision** page (`/vision`, sidebar under Automate) turns your camera into an on-device
+ perception engine, powered by the existing `@huggingface/transformers` dependency:
+
+- **Continuous object detection** — DETR-ResNet-50 (quantized) scans the feed once per second
+  and overlays labeled boxes (person, phone, cup, laptop, …).
+- **Face recognition** — enroll yourself and friends by name; CLIP image embeddings are matched
+  against enrolled descriptors (cosine similarity ≥ 0.72) and recognized faces are labeled live.
+- **Privacy** — frames are processed in-memory only and never uploaded or persisted. Enrollment
+  stores a numeric descriptor (averaged 512-float vector), never an image. Deleting a person
+  removes the descriptor permanently.
+- **Say “See, this is me, this is what I have”** in chat — Nova routes you straight to the
+  Vision page.
+
 ## Scripts
 
 ```bash
@@ -121,4 +136,5 @@ bun run lint     # typecheck
 - Added `PermissionsService` and a Settings → Security permission panel with Grant All.
 - Chat now saves "remember …" messages to the memory panel (permission-gated).
 - Hardened Memory page add/delete against Firebase failures and signed-out state.
+- Added **Vision** (`src/services/vision/vision-service.ts`, `/vision` page): on-device face recognition and continuous object detection with privacy-preserving descriptor storage.
 - Added **Nova Labs** (`src/services/nova/labs.ts`): Time-Debt Auditor, Assumption Ledger, Friction Detector, Future-Self Letters, Session Storyboard, and Ephemeral Whisper mode — wired into Chat and a new Dashboard Insights card.

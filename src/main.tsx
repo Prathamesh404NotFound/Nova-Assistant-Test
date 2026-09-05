@@ -24,6 +24,7 @@ const MemoryPage = lazy(() => import("./pages/Memory"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const AgentsPage = lazy(() => import("./pages/Agents"));
 const DevicesPage = lazy(() => import("./pages/Devices"));
+const VisionPage = lazy(() => import("./pages/Vision"));
 const CalendarPage = lazy(() => import("./pages/CalendarPage"));
 const EmailPage = lazy(() => import("./pages/EmailPage"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
@@ -173,6 +174,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
             <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+            <Route path="/vision" element={<ProtectedRoute><VisionPage /></ProtectedRoute>} />
             <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
             <Route path="/email" element={<ProtectedRoute><EmailPage /></ProtectedRoute>} />
             <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />

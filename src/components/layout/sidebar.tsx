@@ -35,6 +35,7 @@ import {
   Download,
   UserCog,
   Wrench,
+  ScanFace,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfigStatus } from "@/components/ConfigStatus";
@@ -91,6 +92,7 @@ const NAV_CATEGORIES: NavCategory[] = [
     items: [
       { to: "/automations", icon: Zap, label: "Automations" },
       { to: "/devices", icon: Smartphone, label: "Devices" },
+      { to: "/vision", icon: ScanFace, label: "Vision" },
     ],
   },
   {

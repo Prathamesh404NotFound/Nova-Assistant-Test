@@ -370,6 +370,14 @@ export default function Chat() {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
     const text = input.trim();
+
+    // Vision trigger phrase — route to the Vision page.
+    if (/^see,?\s*this is me,?\s*this is what i have\b/i.test(text)) {
+      setInput("");
+      sendMessage(text);
+      navigate("/vision");
+      return;
+    }
     if (whisperMode) {
       // Zero retention: no activity log, no memory save, no conversation persistence
       sendMessage(text);
