@@ -10,6 +10,11 @@ import { callGemini, streamGeminiResponse, classifyTask } from "@/lib/gemini";
 import { MemoryRetriever } from "@/services/memory/memory-retriever";
 import { unifiedMemory } from "@/services/memory/MemoryService";
 import { LocalConversationEngine } from "@/services/ai/local-conversation";
+import { buildProactiveContext } from "@/services/ai/proactive-context";
+import { learnFromMessage, buildPersonalityPromptSuffix } from "@/services/ai/personality-engine";
+import { detectEmotion, getEmotionPrefix, getEmotionGuidelines } from "@/services/ai/emotion-engine";
+import { getGoalsContext, getUpcomingDeadlines } from "@/services/ai/goal-tracker";
+import { recordSuccess, recordFailure, getRecommendedRoute, autoRecover } from "@/services/ai/health-monitor";
 
 export type AIRouterSource = "local" | "gemini";
 
@@ -63,9 +68,23 @@ export async function routeMessage(
 ): Promise<AIRouterResponse> {
   const mode = options?.mode || getAIMode();
 
+  // Learn from user message for personality adaptation
+  learnFromMessage(input);
+
+  // Auto-recover any degraded components
+  autoRecover();
+
+  // Check health-based routing recommendation
+  const healthRoute = getRecommendedRoute();
+
+  // Detect emotion for response modulation
+  const emotion = detectEmotion(input);
+  const emotionPrefix = getEmotionPrefix(emotion);
+
   // MODE: Force Gemini
   if (mode === "gemini") {
-    return routeToGemini(input, geminiKey, options);
+    const result = await routeToGemini(input, geminiKey, options);
+    return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
   }
 
   // MODE: Force Local
@@ -80,7 +99,8 @@ export async function routeMessage(
     }
     try {
       await localAIService.ensureReady();
-      return routeToLocal(input, conversationHistory, options);
+      const result = await routeToLocal(input, conversationHistory, options);
+      return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
     } catch (err) {
       return {
         text: `Local AI couldn't start: ${err instanceof Error ? err.message : "Unknown error"}. Switch to Auto or Gemini mode.`,
@@ -93,14 +113,16 @@ export async function routeMessage(
   // MODE: Auto (default) — classify and route
   const classification = localAIService.classify(input);
 
-  // If classifier says local, try local first — parallelize detect + ensureReady
-  if (classification.decision === "local") {
+  // If health says local-only, skip classification
+  if (healthRoute === "gemini" && classification.decision === "local") {
+    // Health says use Gemini — override local preference
+  } else if (classification.decision === "local") {
     try {
-      // Run detect and ensureReady in parallel to save ~100-200ms
       const avail = await localAIService.detect();
       if (avail.supported) {
         await localAIService.ensureReady();
-        return routeToLocal(input, conversationHistory, options);
+        const result = await routeToLocal(input, conversationHistory, options);
+        return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
       }
     } catch {
       // Fall through to Gemini
@@ -108,7 +130,8 @@ export async function routeMessage(
   }
 
   // Route to Gemini
-  return routeToGemini(input, geminiKey, options);
+  const result = await routeToGemini(input, geminiKey, options);
+  return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
 }
 
 /**
@@ -165,6 +188,44 @@ async function buildMemoryAwarePrompt(userInput: string): Promise<string> {
   }
 }
 
+/**
+ * Build an enriched system prompt with personality, emotion, goals, and proactive context.
+ */
+async function buildEnrichedPrompt(userInput: string): Promise<string> {
+  // Start with memory-aware base
+  let prompt = await buildMemoryAwarePrompt(userInput);
+
+  // Add personality adaptation
+  const personalitySuffix = buildPersonalityPromptSuffix();
+  if (personalitySuffix) prompt += personalitySuffix;
+
+  // Add emotion-aware guidelines
+  const emotion = detectEmotion(userInput);
+  const emotionGuidelines = getEmotionGuidelines(emotion);
+  if (emotionGuidelines) prompt += emotionGuidelines;
+
+  // Add active goals context
+  const goalsContext = getGoalsContext();
+  if (goalsContext) prompt += `\n\n${goalsContext}`;
+
+  // Add upcoming deadlines as proactive nudge
+  const deadlines = getUpcomingDeadlines(3);
+  if (deadlines.length > 0) {
+    const deadlineLines = deadlines.map((g) =>
+      `- "${g.title}" is due soon (${g.priority} priority)`
+    );
+    prompt += `\n\nUpcoming Deadlines (mention if relevant):\n${deadlineLines.join("\n")}`;
+  }
+
+  // Add proactive context
+  try {
+    const proactiveCtx = await buildProactiveContext();
+    if (proactiveCtx) prompt += proactiveCtx;
+  } catch { /* non-critical */ }
+
+  return prompt;
+}
+
 // Cache system prompt per input to avoid rebuilding on retries/retries
 const _systemPromptCache = new Map<string, string>();
 const SYSTEM_PROMPT_CACHE_TTL = 30_000; // 30s TTL
@@ -208,10 +269,10 @@ async function routeToGemini(
 
   let textResponse = "";
 
-  // Use cached system prompt if available, otherwise build it
+  // Use cached system prompt if available, otherwise build enriched prompt
   let systemInstruction = getCachedSystemPrompt(input);
   if (!systemInstruction) {
-    systemInstruction = await buildMemoryAwarePrompt(input);
+    systemInstruction = await buildEnrichedPrompt(input);
     setCachedSystemPrompt(input, systemInstruction);
   }    try {
       if (options?.onChunk) {
@@ -235,6 +296,8 @@ async function routeToGemini(
         textResponse = await callGemini(geminiKey, input, systemInstruction, classifyTask(input));
       }
     } catch (err) {
+      // Record failure for health monitoring
+      recordFailure("gemini-api", err instanceof Error ? err.message : "unknown error");
       // On Gemini failure, fall back to local conversation engine for basic response
       const fallbackText = LocalConversationEngine.generateResponse(input);
       textResponse = fallbackText || `Gemini is unavailable right now (${
@@ -244,7 +307,11 @@ async function routeToGemini(
 
     // Handle empty responses — fall back to local conversation engine
     if (!textResponse || textResponse.trim().length === 0) {
+      recordFailure("gemini-api", "empty response");
       textResponse = LocalConversationEngine.generateResponse(input) || "I'm not sure how to respond to that. Can you try rephrasing?";
+    } else {
+      // Record success
+      recordSuccess("gemini-api", Math.round(performance.now() - startTime));
     }
 
     const latencyMs = Math.round(performance.now() - startTime);

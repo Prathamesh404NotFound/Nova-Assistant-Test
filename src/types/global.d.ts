@@ -16,6 +16,7 @@ declare global {
     onresult: ((event: SpeechRecognitionEvent) => void) | null;
     onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
     onend: (() => void) | null;
+    onstart: (() => void) | null;
   }
 
   class webkitSpeechRecognition extends EventTarget {
@@ -28,6 +29,7 @@ declare global {
     onresult: ((event: SpeechRecognitionEvent) => void) | null;
     onerror: ((event: SpeechRecognitionErrorEvent) => void) | null;
     onend: (() => void) | null;
+    onstart: (() => void) | null;
   }
 
   interface SpeechRecognitionEvent extends Event {

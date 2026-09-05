@@ -3,8 +3,10 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { NovaAvatar, type AvatarState } from "@/components/nova/avatar";
-import { useOfflineSTT } from "@/hooks/use-offline-stt";
+import { type AvatarState } from "@/components/nova/avatar";
+import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
+import { VOICE_STATE_TO_SPRITE, type NovaSpriteState } from "@/config/novaSprites";
+import { useOfflineSTT, type STTError } from "@/hooks/use-offline-stt";
 import { ttsRouter } from "@/services/tts/tts-router";
 import { useChat } from "@/hooks/use-chat";
 import { useAuth } from "@/hooks/use-auth";
@@ -44,12 +46,22 @@ export default function Chat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const navigate = useNavigate();
-  // Voice mode: when true, Nova auto-restarts listening after TTS finishes
+  // Voice mode: when true, Nova auto-restarts listening after TTS finishes.
+  // Ref mirrors the state so TTS callbacks never read a stale closure value.
   const [voiceModeActive, setVoiceModeActive] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const voiceModeActiveRef = useRef(false);
+  const setVoiceMode = useCallback((active: boolean) => {
+    voiceModeActiveRef.current = active;
+    setVoiceModeActive(active);
+  }, []);
 
   // Initialize TTS router with callbacks
   const [isSpeaking, setIsSpeaking] = useState(false);
   const isSpeakingRef = useRef(false);
+
+  const startSTTRef = useRef<() => void>(() => {});
+
   useEffect(() => {
     ttsRouter.setCallbacks({
       onPlay: () => {
@@ -59,11 +71,13 @@ export default function Chat() {
       onEnd: () => {
         setIsSpeaking(false);
         isSpeakingRef.current = false;
-        // Auto-restart STT if voice mode is active — enables continuous conversation
-        if (voiceModeActive) {
+        // Auto-restart STT if voice mode is active — enables continuous conversation.
+        // Reads refs, never stale state captured at mount.
+        if (voiceModeActiveRef.current) {
           setTimeout(() => {
-            if (voiceModeActive && !isSpeakingRef.current) {
-              startSTT();
+            if (voiceModeActiveRef.current && !isSpeakingRef.current) {
+              if (import.meta.env.DEV) console.debug("[VOICE] TTS ended — restarting STT");
+              startSTTRef.current();
             }
           }, 300);
         }
@@ -119,26 +133,16 @@ export default function Chat() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
 
-  useEffect(() => {
-    if (isStreaming) {
-      setAvatarState("thinking");
-    } else if (isSpeaking) {
-      setAvatarState("speaking");
-    } else {
-      setAvatarState("idle");
-    }
-  }, [isStreaming, isSpeaking]);
-
-  // Refresh mode when chat mounts
-  useEffect(() => {
-    setAiMode(getAIMode());
-  }, []);
+  // Keep latest stop/start available to callbacks without stale closures
+  const stopSTTRef = useRef<() => void>(() => {});
 
   const handleTranscript = useCallback(
     (text: string, isFinal: boolean) => {
       if (isFinal && text.trim()) {
-        sendMessage(text.trim());
+        // Stop listening while Nova processes & speaks — prevents self-hearing races.
+        stopSTTRef.current();
         logActivity("chat", `Voice: "${text.trim().slice(0, 40)}"`, "mic");
+        sendMessage(text.trim());
       } else if (text.trim()) {
         setInput(text);
       }
@@ -146,10 +150,67 @@ export default function Chat() {
     [sendMessage]
   );
 
+  const handleVoiceError = useCallback((err: STTError) => {
+    setVoiceError(err.message);
+    // Fatal errors cancel the voice session
+    if (err.kind === "not-allowed" || err.kind === "not-supported" || err.kind === "audio-capture" || err.kind === "service-not-allowed") {
+      setVoiceMode(false);
+    }
+  }, [setVoiceMode]);
+
   const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({
     onTranscript: handleTranscript,
-    continuous: voiceModeActive,
+    onError: handleVoiceError,
+    continuous: true,
   });
+
+  // Keep latest start/stop available to TTS & transcript callbacks without stale closures
+  startSTTRef.current = startSTT;
+  stopSTTRef.current = stopSTT;
+
+  const toggleVoiceMode = useCallback(() => {
+    if (voiceModeActiveRef.current) {
+      // Deactivate voice mode — stop mic and speech cleanly
+      setVoiceMode(false);
+      stopSTT();
+      stopTTS();
+      setVoiceError(null);
+    } else {
+      setVoiceError(null);
+      setVoiceMode(true);
+      startSTT();
+    }
+  }, [setVoiceMode, stopSTT, stopTTS, startSTT]);
+
+  // Voice state machine: idle → listening → processing → speaking → (listening | error)
+  type VoiceState = "idle" | "listening" | "processing" | "speaking" | "error";
+  const voiceState: VoiceState = voiceError
+    ? "error"
+    : isStreaming
+    ? "processing"
+    : isSpeaking
+    ? "speaking"
+    : isListening
+    ? "listening"
+    : "idle";
+
+  // Sprite follows the voice state via the centralized registry
+  const spriteState: NovaSpriteState = VOICE_STATE_TO_SPRITE[voiceState] ?? "idle";
+
+  useEffect(() => {
+    const state: AvatarState =
+      voiceState === "error" ? "error"
+      : voiceState === "processing" ? "thinking"
+      : voiceState === "speaking" ? "speaking"
+      : voiceState === "listening" ? "listening"
+      : "idle";
+    setAvatarState(state);
+  }, [voiceState]);
+
+  // Refresh mode when chat mounts
+  useEffect(() => {
+    setAiMode(getAIMode());
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -221,7 +282,7 @@ export default function Chat() {
           >
             {showSidebar ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
-          <NovaAvatar state={avatarState} size={40} />
+          <SpriteNovaAvatar state={spriteState} size={40} glow={false} />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-white">Nova Hybrid OS</h1>
@@ -387,8 +448,8 @@ export default function Chat() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto py-8">
-              <NovaAvatar state="idle" size={90} />
-              <h2 className="text-lg font-bold text-[#e0ecf5] mt-4">Nova Personal Operating System</h2>
+            <SpriteNovaAvatar state="idle" size={90} glow />
+            <h2 className="text-lg font-bold text-[#e0ecf5] mt-4">Nova Personal Operating System</h2>
               <p className="text-[#5a7a9a] mt-2 text-sm max-w-md">
                 {aiMode === "local"
                   ? "Running in Local AI mode. Casual conversations stay on your device."
@@ -522,34 +583,34 @@ export default function Chat() {
       </div>
 
       {/* Input */}
-      <div className="border-t border-[#1a2f4a] px-4 py-3 bg-[#081422]/90 backdrop-blur-sm">
-        <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-3xl mx-auto">
-          {isSupported && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (voiceModeActive) {
-                  // Deactivate voice mode
-                  setVoiceModeActive(false);
-                  stopSTT();
-                  stopTTS();
-                } else {
-                  // Activate voice mode and start listening
-                  setVoiceModeActive(true);
-                  startSTT();
-                }
-              }}
-              className={`shrink-0 ${
-                voiceModeActive
-                  ? isSpeaking
-                    ? "text-[#00d4ff] bg-[#00d4ff]/10"
-                    : "text-red-400 bg-red-500/10"
-                  : "text-[#6e6e8a]"
-              }`}
-              title={voiceModeActive ? "Voice mode active — click to stop" : "Click to start voice conversation"}
+      <div className="border-t border-[#1a2f4a] px-4 py-3 bg-[#081422]/90 backdrop-blur-sm">          {voiceError && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto mb-2 max-w-3xl flex items-center justify-between p-2.5 rounded-lg bg-[#f97316]/10 border border-[#f97316]/25"
             >
+              <p className="text-xs text-[#fdba74]">⚠️ {voiceError}</p>
+              <Button variant="ghost" size="sm" className="text-[#fdba74] text-xs" onClick={toggleVoiceMode}>
+                Retry
+              </Button>
+            </motion.div>
+          )}
+          <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-3xl mx-auto">
+            {isSupported && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={toggleVoiceMode}
+                className={`shrink-0 ${
+                  voiceModeActive
+                    ? isSpeaking
+                      ? "text-[#00d4ff] bg-[#00d4ff]/10"
+                      : "text-red-400 bg-red-500/10"
+                    : "text-[#6e6e8a]"
+                }`}
+                title={voiceModeActive ? "Voice mode active — click to stop" : "Click to start voice conversation"}
+              >
               {voiceModeActive ? (
                 isSpeaking ? (
                   <span className="relative flex h-5 w-5 items-center justify-center">

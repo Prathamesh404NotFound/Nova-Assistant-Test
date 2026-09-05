@@ -199,6 +199,8 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
             )
           );
           setStatus("idle");
+          // Speak cached responses too — voice loop must behave the same as fresh ones
+          if (onSpeak) onSpeak(cachedResponse);
           return;
         }
 
@@ -294,6 +296,9 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
           content: errContent,
           timestamp: Date.now(),
         });
+
+        // Speak errors in voice mode so the loop doesn't silently die
+        if (onSpeak) onSpeak(errContent);
       } finally {
         // Only clear streaming status if this request is still active
         if (activeRequestRef.current === requestId) {

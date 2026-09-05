@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Nova idle">
+  <defs>
+    <radialGradient id="g_idle" cx="50%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#00d4ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#00d4ff" stop-opacity="0.03"/>
+    </radialGradient>
+    <filter id="g_idle-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Ambient halo -->
+  <circle cx="120" cy="112" r="100" fill="url(#g_idle)"/>
+
+  <!-- Antenna -->
+  <line x1="120" y1="34" x2="120" y2="18" stroke="#00d4ff" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="120" cy="14" r="6" fill="#67e8f9" filter="url(#g_idle-glow)"/>
+
+  <!-- Head shell -->
+  <rect x="48" y="34" width="144" height="150" rx="52" fill="#0b1929" stroke="#00d4ff" stroke-width="3" stroke-opacity="0.85" filter="url(#g_idle-glow)"/>
+  <rect x="60" y="46" width="120" height="126" rx="42" fill="none" stroke="#00d4ff" stroke-width="1.2" stroke-opacity="0.25"/>
+
+  <!-- Side audio ports -->
+  <rect x="38" y="92" width="9" height="26" rx="4.5" fill="#00d4ff" opacity="0.55"/>
+  <rect x="193" y="92" width="9" height="26" rx="4.5" fill="#00d4ff" opacity="0.55"/>
+
+  <!-- Eyes -->
+  <ellipse cx="90" cy="100" r="10" fill="#00d4ff"/>
+  <ellipse cx="150" cy="100" r="10" fill="#00d4ff"/>
+  <circle cx="93" cy="97" r="2.6" fill="#ffffff" opacity="0.75"/>
+  <circle cx="153" cy="97" r="2.6" fill="#ffffff" opacity="0.75"/>
+
+  <!-- Mouth -->
+  <path d="M 96 138 Q 120 154 144 138" fill="none" stroke="#00d4ff" stroke-width="5" stroke-linecap="round"/>
+
+  
+</svg>

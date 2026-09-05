@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Nova processing">
+  <defs>
+    <radialGradient id="g_processing" cx="50%" cy="38%" r="62%">
+      <stop offset="0%" stop-color="#a78bfa" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.03"/>
+    </radialGradient>
+    <filter id="g_processing-glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Ambient halo -->
+  <circle cx="120" cy="112" r="100" fill="url(#g_processing)"/>
+
+  <!-- Antenna -->
+  <line x1="120" y1="34" x2="120" y2="18" stroke="#a78bfa" stroke-width="4" stroke-linecap="round" opacity="0.7"/>
+  <circle cx="120" cy="14" r="6" fill="#ddd6fe" filter="url(#g_processing-glow)"/>
+
+  <!-- Head shell -->
+  <rect x="48" y="34" width="144" height="150" rx="52" fill="#0b1929" stroke="#a78bfa" stroke-width="3" stroke-opacity="0.85" filter="url(#g_processing-glow)"/>
+  <rect x="60" y="46" width="120" height="126" rx="42" fill="none" stroke="#a78bfa" stroke-width="1.2" stroke-opacity="0.25"/>
+
+  <!-- Side audio ports -->
+  <rect x="38" y="92" width="9" height="26" rx="4.5" fill="#a78bfa" opacity="0.55"/>
+  <rect x="193" y="92" width="9" height="26" rx="4.5" fill="#a78bfa" opacity="0.55"/>
+
+  <!-- Eyes -->
+  <ellipse cx="90" cy="100" r="10" fill="#a78bfa"/>
+  <ellipse cx="150" cy="100" r="10" fill="#a78bfa"/>
+  <circle cx="93" cy="97" r="2.6" fill="#ffffff" opacity="0.75"/>
+  <circle cx="153" cy="97" r="2.6" fill="#ffffff" opacity="0.75"/>
+
+  <!-- Mouth -->
+  <rect x="98" y="138" width="5" height="12" rx="2.5" fill="#a78bfa"/><rect x="107" y="132" width="5" height="18" rx="2.5" fill="#a78bfa"/><rect x="116" y="132" width="5" height="18" rx="2.5" fill="#a78bfa"/><rect x="125" y="132" width="5" height="18" rx="2.5" fill="#a78bfa"/><rect x="134" y="138" width="5" height="12" rx="2.5" fill="#a78bfa"/>
+
+  <circle cx="120" cy="196" r="6" fill="none" stroke="#a78bfa" stroke-width="3" stroke-dasharray="10 6" opacity="0.8"/>
+</svg>
