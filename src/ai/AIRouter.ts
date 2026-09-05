@@ -22,6 +22,8 @@ export interface AIRouterResponse {
   text: string;
   source: AIRouterSource;
   latencyMs: number;
+  /** Optional explicit text to speak in voice mode. If omitted, `text` is used. */
+  speakText?: string;
 }
 
 export interface AIRouterCallbacks {
@@ -268,13 +270,16 @@ async function routeToGemini(
   }
 
   let textResponse = "";
+  let spokeText: string | null = null;
 
   // Use cached system prompt if available, otherwise build enriched prompt
   let systemInstruction = getCachedSystemPrompt(input);
   if (!systemInstruction) {
     systemInstruction = await buildEnrichedPrompt(input);
     setCachedSystemPrompt(input, systemInstruction);
-  }    try {
+  }
+
+  try {
       if (options?.onChunk) {
         let accumulated = "";
         await new Promise<void>((resolve, reject) => {
@@ -295,25 +300,38 @@ async function routeToGemini(
       } else {
         textResponse = await callGemini(geminiKey, input, systemInstruction, classifyTask(input));
       }
+
+      // Treat purely whitespace/empty Gemini replies as a failure path
+      if (!textResponse || textResponse.trim().length === 0) {
+        throw new Error("Gemini returned an empty response");
+      }
     } catch (err) {
       // Record failure for health monitoring
       recordFailure("gemini-api", err instanceof Error ? err.message : "unknown error");
+
       // On Gemini failure, fall back to local conversation engine for basic response
       const fallbackText = LocalConversationEngine.generateResponse(input);
-      textResponse = fallbackText || `Gemini is unavailable right now (${
-        err instanceof Error ? err.message : "offline"
-      }). Try enabling Local AI in Settings.`;
+      if (fallbackText && fallbackText.trim().length > 0) {
+        textResponse = fallbackText;
+      } else {
+        textResponse = `Gemini is unavailable right now (${err instanceof Error ? err.message : "offline"}). Try enabling Local AI in Settings.`;
+      }
     }
 
-    // Handle empty responses — fall back to local conversation engine
+    // Normalize bad responses one more time for safety
     if (!textResponse || textResponse.trim().length === 0) {
       recordFailure("gemini-api", "empty response");
       textResponse = LocalConversationEngine.generateResponse(input) || "I'm not sure how to respond to that. Can you try rephrasing?";
     } else {
-      // Record success
+      // Record success once we have real text
       recordSuccess("gemini-api", Math.round(performance.now() - startTime));
     }
 
+    // Choose the text that should be spoken in voice mode.
+    // Prefer the final Gemini-like text, but use a speakable fallback if it looks like an error banner.
+    const isErrorBanner = textResponse.startsWith("Gemini is unavailable");
+    spokeText = isErrorBanner ? textResponse : textResponse;
+
     const latencyMs = Math.round(performance.now() - startTime);
-    return { text: textResponse, source: "gemini", latencyMs };
+    return { text: textResponse, source: "gemini", latencyMs, speakText: spokeText };
 }

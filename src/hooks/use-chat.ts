@@ -269,9 +269,11 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
 
         setConversations(getConversations());
 
-        // Speak response if voice is enabled
+        // Speak response if voice is enabled.
+        // Prefer the router-supplied speak text so voice mode gets explicit, stable content.
+        const textToSpeak = response.speakText ?? response.text;
         if (onSpeak) {
-          onSpeak(response.text);
+          onSpeak(textToSpeak);
         }
       } catch (err: unknown) {
         // Only update state if this request is still active

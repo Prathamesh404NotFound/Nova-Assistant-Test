@@ -379,10 +379,34 @@ export async function streamGeminiResponse({
         }
       }
 
+      // Retry once on transient Gemini errors using the next model in the fallback chain.
+      // This prevents a single flaky model from producing a silent failure.
+      if (status === 408 || status === 429 || status >= 500) {
+        const fallbackChain = getFallbackChain(task);
+        const retryModel = fallbackChain.find((m) => m !== model);
+        if (retryModel) {
+          verifiedModel = null;
+          verifiedCodeModel = null;
+          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:streamGenerateContent?key=${effectiveKey}`;
+          const retryResponse = await fetch(retryUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+            signal: streamAbort.signal,
+          });
+          if (retryResponse.ok) {
+            await processStreamResponse(retryResponse, onChunk, onDone);
+            clearTimeout(streamTimer);
+            return;
+          }
+        }
+      }
+
       clearTimeout(streamTimer);
       const category =
         status === 404 ? "MODEL_NOT_FOUND" :
         status === 401 || status === 403 ? "INVALID_API_KEY" :
+        status === 408 || status === 429 ? "TRANSIENT Gemini_ERROR" :
         status >= 500 ? "GOOGLE_API_FAILURE" :
         "UNKNOWN_ERROR";
 
@@ -498,6 +522,34 @@ export async function callGemini(
           verifiedModel = null;
           verifiedCodeModel = null;
           const retryUrl = `${GEMINI_API_BASE}/models/${fallbackModel}:generateContent?key=${effectiveKey}`;
+          try {
+            const retryResponse = await fetch(retryUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                contents: [{ role: "user", parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+              }),
+              signal: abort.signal,
+            });
+            if (retryResponse.ok) {
+              const retryData = await retryResponse.json();
+              clearTimeout(timer);
+              return cleanResponse(retryData.candidates?.[0]?.content?.parts?.[0]?.text || "");
+            }
+          } catch { /* fall through */ }
+        }
+      }
+
+      // Retry once on transient Gemini errors using the next model in the fallback chain.
+      if (status === 408 || status === 429 || status >= 500) {
+        const fallbackChain = getFallbackChain(task);
+        const retryModel = fallbackChain.find((m) => m !== model);
+        if (retryModel) {
+          verifiedModel = null;
+          verifiedCodeModel = null;
+          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:generateContent?key=${effectiveKey}`;
           try {
             const retryResponse = await fetch(retryUrl, {
               method: "POST",
