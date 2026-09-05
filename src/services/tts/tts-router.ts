@@ -126,9 +126,7 @@ export class TTSRouter {
 
   /** Browser SpeechSynthesis fallback. */
   private speakWithBrowser(text: string, options: TTSOptions): void {
-    if (!("speechSynthesis" in window)) return;
-
-    window.speechSynthesis.cancel();
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = options.speed || 1.0;
@@ -140,7 +138,19 @@ export class TTSRouter {
     utterance.onend = () => this.onEnd?.();
     utterance.onerror = () => this.onEnd?.();
 
-    window.speechSynthesis.speak(utterance);
+    // Chrome race: calling cancel() synchronously right before speak() often
+    // cancels the newly queued utterance too, so nothing is ever spoken and
+    // the voice conversation loop stalls. Deferring the speak by one tick
+    // lets the cancel settle first.
+    window.speechSynthesis.cancel();
+    setTimeout(() => {
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        console.warn("[TTS] Browser speech failed to start:", err);
+        this.onEnd?.();
+      }
+    }, 80);
   }
 
   /** Stop all playback and clear queue. */

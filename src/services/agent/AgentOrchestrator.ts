@@ -270,6 +270,15 @@ class AgentOrchestratorImpl {
     // 1. Check if this should become a mission
     if (missionManager.shouldCreateMission(input.text)) {
       const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "";
+      // Without a key, mission planning is guaranteed to fail — defer to AI chat instead.
+      if (!geminiKey) {
+        return {
+          response: "",
+          actionsExecuted: [],
+          route: { route: "CHAT", confidence: 0.6 },
+          durationMs: Date.now() - start,
+        };
+      }
       const mission = await missionManager.create(input.text, context, input.source, geminiKey);
       return {
         response: `Mission started: "${input.text.slice(0, 60)}"\nPlan: ${mission.steps.length} steps identified.\n${mission.steps.map((s, i) => `${i + 1}. ${s.description}`).join("\n")}`,
@@ -503,6 +512,18 @@ class AgentOrchestratorImpl {
   ): Promise<AgentResult> {
     const actionsExecuted = [...initialActions];
     const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "";
+
+    // No key — skip the AI tool loop entirely so we don't poison the health
+    // monitor with guaranteed failures. Defer to the AI chat pipeline instead.
+    if (!geminiKey) {
+      return {
+        response: "",
+        actionsExecuted,
+        route: { route: "AI_TOOL", confidence: 0.6 },
+        durationMs: Date.now() - startMs,
+      };
+    }
+
     const MAX_LOOP_STEPS = 3;
 
     // Get structured function declarations from ToolRegistry

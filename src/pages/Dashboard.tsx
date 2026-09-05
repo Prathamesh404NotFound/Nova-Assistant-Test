@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useWakeWord } from "@/hooks/use-wake-word";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
 import { agentOrchestrator } from "@/services/agent/AgentOrchestrator";
+import { routeMessage } from "@/ai/AIRouter";
 import { ttsRouter } from "@/services/tts/tts-router";
 import { getAIMode } from "@/ai/local/LocalAISettings";
 import { DownloadModal } from "@/components/local-ai/DownloadModal";
@@ -90,6 +91,7 @@ export default function Dashboard() {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [novaResponse, setNovaResponse] = useState("");
   const [isMuted, setIsMuted] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [geminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "");
   const [showLocalAIDownload, setShowLocalAIDownload] = useState(false);
   const [localAIAvailable, setLocalAIAvailable] = useState<boolean | null>(null);
@@ -127,6 +129,8 @@ export default function Dashboard() {
   }, []);
 
   // Voice handler: routes through AgentOrchestrator → TTS Router (not raw SpeechSynthesis)
+  // Conversational messages (no tool match) fall through to the full AI pipeline,
+  // so Nova always replies instead of going silent.
   const handleTranscript = useCallback(
     async (text: string, isFinal: boolean) => {
       if (!isFinal) { setAvatarState("listening"); return; }
@@ -134,32 +138,57 @@ export default function Dashboard() {
       setNovaResponse("");
       logActivity("voice", `Voice command: "${text.slice(0, 50)}"`, "mic");
       try {
+        let reply = "";
         const result = await agentOrchestrator.process({
           text,
           source: "voice" as const,
           context: { userId: user?.uid || "" },
         });
-        setNovaResponse(result.response);
+        reply = result.response;
+
+        // Empty response = orchestrator deferred to AI (conversational message).
+        // Route through the AI pipeline so Nova actually answers.
+        if (!reply || !reply.trim()) {
+          const ai = await routeMessage(text, [], geminiKey);
+          reply = ai.text;
+        }
+
+        // Last-resort guard: a voice turn must never end with silence.
+        if (!reply || !reply.trim()) {
+          reply = "I didn't catch that. Could you say it again?";
+        }
+
+        setNovaResponse(reply);
         setAvatarState("speaking");
-        if (!isMuted && result.response) {
-          ttsRouter.speak(result.response).catch(() => {
+        if (!isMuted && reply) {
+          ttsRouter.speak(reply).catch(() => {
             // TTS failed but text still shows — that's ok
           });
         }
         // Set avatar back to idle after TTS finishes or after a delay
         setTimeout(() => setAvatarState("idle"), isMuted ? 3000 : 8000);
-      } catch {
+      } catch (err) {
         setAvatarState("error");
-        setNovaResponse("I couldn't process that. Check your API key in Settings.");
+        setNovaResponse(
+          `I couldn't process that. ${err instanceof Error ? err.message : "Check your API key in Settings."}`
+        );
         setTimeout(() => setAvatarState("idle"), 3000);
       }
     },
     [geminiKey, isMuted, user?.uid]
   );
 
-  const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({ onTranscript: handleTranscript });
+  const handleVoiceError = useCallback((err: { message: string }) => {
+    setVoiceError(err.message);
+  }, []);
+
+  const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({
+    onTranscript: handleTranscript,
+    onError: handleVoiceError,
+  });
 
   const handleVoiceToggle = useCallback(() => {
+    setVoiceError(null);
     if (isListening) {
       stopSTT();
       ttsRouter.stop(); // Stop any playing TTS
@@ -263,6 +292,9 @@ export default function Dashboard() {
                 >
                   {isListening ? <><MicOff className="mr-2 h-4 w-4" />Stop Listening</> : <><Mic className="mr-2 h-4 w-4" />Talk to Nova</>}
                 </Button>
+                {voiceError && (
+                  <p className="text-xs text-[#f59e0b] max-w-md text-center">⚠️ {voiceError}</p>
+                )}
                 <button onClick={() => setIsMuted(!isMuted)} className="text-[#5a7a9a] hover:text-[#c8d6e5] transition-colors" aria-label={isMuted ? "Unmute voice output" : "Mute voice output"}>
                   {isMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
                 </button>

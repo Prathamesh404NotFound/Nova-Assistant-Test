@@ -23,9 +23,9 @@ export const GEMINI_MODELS: GeminiModel[] = [
   { id: "gemini-3.5-flash", label: "3.5 Flash", purpose: "General AI, agents, coding", tier: "standard" },
   { id: "gemini-3.6-flash", label: "3.6 Flash", purpose: "General AI, agents, coding", tier: "standard" },
   { id: "gemini-3.7-flash", label: "3.7 Flash", purpose: "General AI, reasoning, coding", tier: "standard" },
+  { id: "gemini-3.8-flash", label: "3.8 Flash", purpose: "Advanced reasoning/coding", tier: "advanced" },
   { id: "gemini-3-flash-preview", label: "3 Flash", purpose: "General multimodal AI", tier: "standard" },
   { id: "gemini-3.1-pro-preview", label: "3.1 Pro", purpose: "Advanced reasoning/coding", tier: "advanced" },
-  { id: "gemini-3-pro-preview", label: "3 Pro", purpose: "Advanced reasoning/multimodal", tier: "advanced" },
 ];
 
 // Specialized models (not in fallback chain — selected explicitly)
@@ -44,14 +44,16 @@ const CHAT_FALLBACK_CHAIN = [
   "gemini-3.5-flash",
   "gemini-3.6-flash",
   "gemini-3.7-flash",
+  "gemini-3.8-flash",
   "gemini-3-flash-preview",
 ];
 
 // Code/reasoning fallback: heavier models first
 const CODE_FALLBACK_CHAIN = [
-  "gemini-3.5-flash",
-  "gemini-3.6-flash",
+  "gemini-3.8-flash",
   "gemini-3.7-flash",
+  "gemini-3.6-flash",
+  "gemini-3.5-flash",
   "gemini-3.1-pro-preview",
 ];
 
@@ -181,7 +183,10 @@ export async function listGeminiModels(apiKey: string): Promise<ModelInfo[]> {
   if (!key) return [];
 
   try {
-    const response = await fetch(`${GEMINI_API_BASE}/models?key=${key}`);
+    const response = await fetch(`${GEMINI_API_BASE}/models`, {
+      method: "GET",
+      headers: { "x-goog-api-key": key },
+    });
     if (!response.ok) return [];
     const data = await response.json();
     const models: ModelInfo[] = (data.models || [])
@@ -332,83 +337,62 @@ export async function streamGeminiResponse({
       generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: 2048 },
     };
 
-    const url = `${GEMINI_API_BASE}/models/${model}:streamGenerateContent?alt=sse`;
     // Use AbortController for timeout
     const streamAbort = new AbortController();
     const streamTimer = setTimeout(() => streamAbort.abort(), STREAM_TIMEOUT_MS);
 
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
-        body: JSON.stringify(body),
-        signal: streamAbort.signal,
-      });
-    } catch (err: unknown) {
-      clearTimeout(streamTimer);
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new Error("Gemini API request timed out. Please try again.");
+    // Try the preferred model first, then walk the entire fallback chain.
+    // A single down/rate-limited model must not sink the whole request.
+    const chain = getFallbackChain(task);
+    const candidates = [model, ...chain.filter((m) => m !== model)];
+    const failures: Array<{ status: number; text: string }> = [];
+    let response: Response | null = null;
+
+    for (const candidate of candidates) {
+      try {
+        const res = await fetch(
+          `${GEMINI_API_BASE}/models/${candidate}:streamGenerateContent?alt=sse`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
+            body: JSON.stringify(body),
+            signal: streamAbort.signal,
+          }
+        );
+        if (res.ok) {
+          response = res;
+          if (candidate !== model) {
+            // Remember the model that actually worked so future calls skip the dead one.
+            if (task === "code") verifiedCodeModel = candidate;
+            else verifiedModel = candidate;
+          }
+          break;
+        }
+        const errText = (await res.text()).slice(0, 200);
+        failures.push({ status: res.status, text: errText });
+        // Definitive errors (invalid key, blocked request) won't be fixed by another model.
+        if (res.status !== 404 && res.status !== 408 && res.status !== 429 && res.status < 500) {
+          break;
+        }
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw new Error("Gemini API request timed out. Please try again.");
+        }
+        failures.push({ status: 0, text: err instanceof Error ? err.message : String(err) });
       }
-      throw err;
     }
 
-    if (!response.ok) {
+    if (!response) {
       clearTimeout(streamTimer);
-      const errText = await response.text();
-      const status = response.status;
-
-      if (status === 404) {
-        const fallbackChain = getFallbackChain(task);
-        const fallbackModel = fallbackChain.find((m) => m !== model);
-        if (fallbackModel) {
-          verifiedModel = null;
-          verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${fallbackModel}:streamGenerateContent?alt=sse`;
-          const retryResponse = await fetch(retryUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
-            body: JSON.stringify(body),
-            signal: streamAbort.signal,
-          });
-          if (retryResponse.ok) {
-            await processStreamResponse(retryResponse, onChunk, onDone);
-            clearTimeout(streamTimer);
-            return;
-          }
-        }
-      }
-
-      // Retry once on transient Gemini errors using the next model in the fallback chain.
-      // This prevents a single flaky model from producing a silent failure.
-      if (status === 408 || status === 429 || status >= 500) {
-        const fallbackChain = getFallbackChain(task);
-        const retryModel = fallbackChain.find((m) => m !== model);
-        if (retryModel) {
-          verifiedModel = null;
-          verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:streamGenerateContent?alt=sse`;
-          const retryResponse = await fetch(retryUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
-            body: JSON.stringify(body),
-            signal: streamAbort.signal,
-          });
-          if (retryResponse.ok) {
-            await processStreamResponse(retryResponse, onChunk, onDone);
-            clearTimeout(streamTimer);
-            return;
-          }
-        }
-      }
-
-      clearTimeout(streamTimer);
+      const last = failures[failures.length - 1];
+      const status = last?.status ?? 0;
+      const errText = last?.text ?? "";
       const category =
         status === 404 ? "MODEL_NOT_FOUND" :
         status === 401 || status === 403 ? "INVALID_API_KEY" :
-        status === 408 || status === 429 ? "TRANSIENT Gemini_ERROR" :
+        status === 408 || status === 429 ? "TRANSIENT GEMINI_ERROR" :
         status >= 500 ? "GOOGLE_API_FAILURE" :
-        "UNKNOWN_ERROR";
+        "NETWORK_ERROR";
 
       throw new Error(`Gemini API error ${status} (${category}): ${errText.slice(0, 200)}`);
     }
@@ -485,91 +469,58 @@ export async function callGemini(
     model = getFallbackChain(task)[0];
   }
 
-  try {    // Use AbortController for timeout
+  try {
+    // Use AbortController for timeout
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
 
-    const url = `${GEMINI_API_BASE}/models/${model}:generateContent`;
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-        }),
-        signal: abort.signal,
-      });
-    } catch (err: unknown) {
-      clearTimeout(timer);
-      if (err instanceof DOMException && err.name === "AbortError") {
-        throw new Error("Gemini API request timed out. Please try again.");
+    const requestBody = JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      systemInstruction: { parts: [{ text: systemInstruction }] },
+      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+    });
+
+    // Try the preferred model first, then walk the entire fallback chain.
+    const chain = getFallbackChain(task);
+    const candidates = [model, ...chain.filter((m) => m !== model)];
+    const failures: Array<{ status: number; text: string }> = [];
+    let response: Response | null = null;
+
+    for (const candidate of candidates) {
+      try {
+        const res = await fetch(`${GEMINI_API_BASE}/models/${candidate}:generateContent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
+          body: requestBody,
+          signal: abort.signal,
+        });
+        if (res.ok) {
+          response = res;
+          if (candidate !== model) {
+            if (task === "code") verifiedCodeModel = candidate;
+            else verifiedModel = candidate;
+          }
+          break;
+        }
+        const errText = (await res.text()).slice(0, 200);
+        failures.push({ status: res.status, text: errText });
+        // Definitive errors (invalid key, blocked request) won't be fixed by another model.
+        if (res.status !== 404 && res.status !== 408 && res.status !== 429 && res.status < 500) {
+          break;
+        }
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw new Error("Gemini API request timed out. Please try again.");
+        }
+        failures.push({ status: 0, text: err instanceof Error ? err.message : String(err) });
       }
-      throw new Error(`Gemini request failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    if (!response.ok) {
+    if (!response) {
       clearTimeout(timer);
-      const status = response.status;
-      const errText = await response.text();
-
-      if (status === 404) {
-        const fallbackChain = getFallbackChain(task);
-        const fallbackModel = fallbackChain.find((m) => m !== model);
-        if (fallbackModel) {
-          verifiedModel = null;
-          verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${fallbackModel}:generateContent`;
-          try {
-            const retryResponse = await fetch(retryUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
-              body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] },
-                generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-              }),
-              signal: abort.signal,
-            });
-            if (retryResponse.ok) {
-              const retryData = await retryResponse.json();
-              clearTimeout(timer);
-              return cleanResponse(retryData.candidates?.[0]?.content?.parts?.[0]?.text || "");
-            }
-          } catch { /* fall through */ }
-        }
-      }
-
-      // Retry once on transient Gemini errors using the next model in the fallback chain.
-      if (status === 408 || status === 429 || status >= 500) {
-        const fallbackChain = getFallbackChain(task);
-        const retryModel = fallbackChain.find((m) => m !== model);
-        if (retryModel) {
-          verifiedModel = null;
-          verifiedCodeModel = null;
-          const retryUrl = `${GEMINI_API_BASE}/models/${retryModel}:generateContent`;
-          try {
-            const retryResponse = await fetch(retryUrl, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "x-goog-api-key": effectiveKey },
-              body: JSON.stringify({
-                contents: [{ role: "user", parts: [{ text: prompt }] }],
-                systemInstruction: { parts: [{ text: systemInstruction }] },
-                generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-              }),
-              signal: abort.signal,
-            });
-            if (retryResponse.ok) {
-              const retryData = await retryResponse.json();
-              clearTimeout(timer);
-              return cleanResponse(retryData.candidates?.[0]?.content?.parts?.[0]?.text || "");
-            }
-          } catch { /* fall through */ }
-        }
-      }
-
+      const last = failures[failures.length - 1];
+      const status = last?.status ?? 0;
+      const errText = last?.text ?? "";
       throw new Error(`Gemini API error ${status}: ${errText.slice(0, 200)}`);
     }
 
@@ -578,6 +529,7 @@ export async function callGemini(
     return cleanResponse(data.candidates?.[0]?.content?.parts?.[0]?.text || "");
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("Gemini API error")) throw err;
+    if (err instanceof Error && err.message.includes("timed out")) throw err;
     throw new Error(`Gemini request failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

@@ -212,6 +212,14 @@ export default function Chat() {
     setAiMode(getAIMode());
   }, []);
 
+  // Stop any in-flight speech when leaving the page so audio never bleeds
+  // across routes.
+  useEffect(() => {
+    return () => {
+      ttsRouter.stop();
+    };
+  }, []);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
