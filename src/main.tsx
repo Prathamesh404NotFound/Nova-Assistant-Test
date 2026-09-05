@@ -5,7 +5,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { VlyToolbar } from "./vly-toolbar-readonly";
 import React, { Component, StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate, Navigate } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
@@ -100,9 +100,24 @@ class RootErrorBoundary extends Component<RootProps, RootState> {
 
 function RouteSyncer() {
   const location = useLocation();
+  const navigate = useNavigate();
   useEffect(() => {
     window.parent.postMessage({ type: "iframe-route-change", path: location.pathname }, "*");
   }, [location.pathname]);
+
+  // Bridge for the AI agent's navigation.go tool: tools can't call the router
+  // directly, so they dispatch a window event and we navigate here.
+  useEffect(() => {
+    function handleNovaNavigate(event: Event) {
+      const path = (event as CustomEvent<string>).detail;
+      if (typeof path === "string" && path.startsWith("/")) {
+        navigate(path);
+      }
+    }
+    window.addEventListener("nova:navigate", handleNovaNavigate);
+    return () => window.removeEventListener("nova:navigate", handleNovaNavigate);
+  }, [navigate]);
+
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
       if (event.data?.type === "navigate") {

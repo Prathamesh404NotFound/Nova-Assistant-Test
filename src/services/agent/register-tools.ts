@@ -549,10 +549,13 @@ const navigationGoTool: NovaTool = {
   riskLevel: "safe",
   confirmationRequired: false,
   execute: async (args) => {
-    const path = args.path as string;
-    // Perform client-side navigation
+    const raw = (args.path as string) || "/";
+    const path = raw.startsWith("/") ? raw : `/${raw}`;
+    // SPA navigation: dispatch a custom event that the router (main.tsx
+    // RouteSyncer) turns into a real client-side navigate(). The old
+    // location.hash approach silently did nothing under BrowserRouter.
     if (typeof window !== "undefined") {
-      window.location.hash = `#${path}`;
+      window.dispatchEvent(new CustomEvent("nova:navigate", { detail: path }));
     }
     return ok("navigation.go", { path }, `Navigating to ${path}`);
   },
