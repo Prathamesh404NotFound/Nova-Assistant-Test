@@ -1,22 +1,23 @@
 /**
  * Nova Sprite Registry
- * All artwork is original project artwork (see SPRITES_LICENSE.md).
+ * The active raster set is derived from the user-provided reference image
+ * (see SPRITES_LICENSE.md); the original SVG set remains available as fallback assets.
  * Centralized so components never hard-code image paths.
  */
-import idle from "@/assets/nova/nova-idle.svg";
-import listening from "@/assets/nova/nova-listening.svg";
-import thinking from "@/assets/nova/nova-thinking.svg";
-import speaking from "@/assets/nova/nova-speaking.svg";
-import happy from "@/assets/nova/nova-happy.svg";
-import excited from "@/assets/nova/nova-excited.svg";
-import curious from "@/assets/nova/nova-curious.svg";
-import focused from "@/assets/nova/nova-focused.svg";
-import confident from "@/assets/nova/nova-confident.svg";
-import gentle from "@/assets/nova/nova-gentle.svg";
-import alert from "@/assets/nova/nova-alert.svg";
-import sleepy from "@/assets/nova/nova-sleepy.svg";
-import processing from "@/assets/nova/nova-processing.svg";
-import error from "@/assets/nova/nova-error.svg";
+import idle from "@/assets/nova/nova-idle.png";
+import listening from "@/assets/nova/nova-listening.png";
+import thinking from "@/assets/nova/nova-thinking.png";
+import speaking from "@/assets/nova/nova-speaking.png";
+import happy from "@/assets/nova/nova-happy.png";
+import excited from "@/assets/nova/nova-excited.png";
+import curious from "@/assets/nova/nova-curious.png";
+import focused from "@/assets/nova/nova-focused.png";
+import confident from "@/assets/nova/nova-confident.png";
+import gentle from "@/assets/nova/nova-gentle.png";
+import alert from "@/assets/nova/nova-alert.png";
+import sleepy from "@/assets/nova/nova-sleepy.png";
+import processing from "@/assets/nova/nova-processing.png";
+import error from "@/assets/nova/nova-error.png";
 
 export const NOVA_SPRITE_STATES = [
   "idle",

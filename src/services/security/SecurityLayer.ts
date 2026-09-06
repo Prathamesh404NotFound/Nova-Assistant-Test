@@ -18,6 +18,7 @@ import type {
   BoundedContent,
   InjectionCheckResult,
 } from "./SecurityTypes";
+import { permissionsService, type PermissionId } from "@/services/permissions";
 
 // ─── Default Security Metadata per Tool Category ─────────────────────────────
 
@@ -272,6 +273,19 @@ class SecurityLayerImpl {
   checkPermission(toolName: string, category: string, context?: { missionId?: string }): PermissionDecision {
     const meta = this.getToolSecurityMeta(toolName, category);
 
+    const appPermission = this.requiredAppPermission(toolName, category);
+    if (appPermission && !permissionsService.isGranted(appPermission)) {
+      return {
+        allowed: false,
+        reason: `Nova permission required: ${appPermission}`,
+        requiresConfirmation: true,
+      };
+    }
+    // The user-facing Nova permission is the source of truth for capabilities
+    // represented in the Settings → Security panel. Risky tools still pass
+    // through the separate confirmation check in ToolExecutor.
+    if (appPermission) return { allowed: true, grantType: "session" };
+
     // No capabilities needed → always allowed
     if (meta.requiredCapabilities.length === 0) {
       return { allowed: true, grantType: "session" };
@@ -290,6 +304,17 @@ class SecurityLayerImpl {
     }
 
     return { allowed: true, grantType: "session" };
+  }
+
+  private requiredAppPermission(toolName: string, category: string): PermissionId | null {
+    if (category === "calendar") return "calendar";
+    if (category === "email") return "email";
+    if (category === "automation") return "automations";
+    if (category === "notifications") return "notifications";
+    if (category === "browser" || category === "search") return "browser_research";
+    if (category === "desktop" || category === "device" || category === "files") return "external_actions";
+    if (toolName.startsWith("tts.")) return "voice_synthesis";
+    return null;
   }
 
   grantPermission(capability: PermissionCapability, grantType: PermissionGrantType, source: "user" | "system", missionId?: string): PermissionGrant {

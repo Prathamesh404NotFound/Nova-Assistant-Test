@@ -10,6 +10,7 @@ import {
   deleteEvent,
   type CalendarEvent,
 } from "@/lib/local-store";
+import { saveCalendarEvent, deleteCalendarEvent, getCalendarEvents } from "@/lib/rtdb";
 
 export interface CreateEventInput {
   title: string;
@@ -24,7 +25,7 @@ class CalendarService {
   /**
    * Create a new calendar event. Returns the created event.
    */
-  create(input: CreateEventInput): CalendarEvent {
+  create(input: CreateEventInput, userId?: string): CalendarEvent {
     const event = addEvent({
       title: input.title,
       description: input.description || "",
@@ -33,7 +34,12 @@ class CalendarService {
       duration: input.duration || 60,
       color: input.color || "#00d4ff",
     });
+    if (userId) void saveCalendarEvent(userId, event);
     return event;
+  }
+
+  async listForUser(userId: string): Promise<CalendarEvent[]> {
+    return getCalendarEvents(userId);
   }
 
   /**
@@ -92,9 +98,10 @@ class CalendarService {
   /**
    * Delete an event by ID. Returns true if deleted.
    */
-  delete(id: string): boolean {
+  delete(id: string, userId?: string): boolean {
     const before = getEvents().length;
     deleteEvent(id);
+    if (userId) void deleteCalendarEvent(userId, id);
     return getEvents().length < before;
   }
 

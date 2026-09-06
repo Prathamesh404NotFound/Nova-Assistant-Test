@@ -5,6 +5,7 @@
  */
 
 import { useState, useEffect, useCallback } from "react";
+import { automationEngine } from "@/services/automation";
 import {
   Zap,
   Play,
@@ -163,17 +164,26 @@ export function AutomationBuilder() {
     setDryRunResults((prev) => ({ ...prev, [auto.id]: ["Simulated: Action would execute without side effects"] }));
   }, []);
 
-  const runAutomation = useCallback((auto: Automation) => {
+  const runAutomation = useCallback(async (auto: Automation) => {
     const logId = generateId();
     const startTime = Date.now();
     setLogs((prev) => [{ id: logId, automationId: auto.id, automationName: auto.name, status: "running" as ExecutionStatus, triggerType: auto.trigger.type, actionsExecuted: 0, actionsTotal: auto.actions.length, duration: 0, timestamp: Date.now() }, ...prev].slice(0, 500));
-
-    setTimeout(() => {
-      const succeeded = Math.random() > 0.15;
+    try {
+      const actions = auto.actions.map((action) => ({
+        type: action.type === "api_call" ? "webhook" : action.type === "toggle_device" || action.type === "run_code" ? "custom" : action.type,
+        config: action.config,
+        confirmationRequired: false,
+      })) as import("@/services/automation/AutomationTypes").AutomationAction[];
+      const executed = auto.dryRun ? 0 : await automationEngine.runActions(actions, {});
       const duration = Date.now() - startTime;
-      setLogs((prev) => prev.map((l) => l.id === logId ? { ...l, status: succeeded ? "success" : "failed", actionsExecuted: succeeded ? auto.actions.length : Math.floor(auto.actions.length / 2), duration, error: succeeded ? undefined : "Action failed: connection timeout" } : l));
-      setAutomations((prev) => prev.map((a) => a.id === auto.id ? { ...a, lastRun: Date.now(), runCount: a.runCount + 1, lastStatus: succeeded ? "success" : "failed" } : a));
-    }, 1000 + Math.random() * 1000);
+      setLogs((prev) => prev.map((l) => l.id === logId ? { ...l, status: "success", actionsExecuted: executed, duration } : l));
+      setAutomations((prev) => prev.map((a) => a.id === auto.id ? { ...a, lastRun: Date.now(), runCount: a.runCount + 1, lastStatus: "success" } : a));
+    } catch (err) {
+      const duration = Date.now() - startTime;
+      const message = err instanceof Error ? err.message : String(err);
+      setLogs((prev) => prev.map((l) => l.id === logId ? { ...l, status: "failed", duration, error: message } : l));
+      setAutomations((prev) => prev.map((a) => a.id === auto.id ? { ...a, lastRun: Date.now(), runCount: a.runCount + 1, lastStatus: "failed" } : a));
+    }
   }, []);
 
   const toggleDryRun = useCallback((id: string) => {
