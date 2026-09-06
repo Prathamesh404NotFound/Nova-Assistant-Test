@@ -12,6 +12,7 @@ import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { AIServiceProvider } from "@/contexts/AIServiceProvider";
 import { WakeWordProvider } from "@/contexts/WakeWordProvider";
 import { WakeWordActivator } from "@/components/WakeWordActivator";
+import { PermissionPrompt } from "@/components/PermissionPrompt";
 import "./index.css";
 
 // Lazy load all pages
@@ -158,6 +159,7 @@ createRoot(document.getElementById("root")!).render(
         <WakeWordProvider>
         <RouteSyncer />
         <WakeWordActivator />
+        <PermissionPrompt />
         <CommandPalette />
         <KeyboardShortcuts />
         <Suspense fallback={<RouteLoading />}>

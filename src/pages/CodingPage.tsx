@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Code, Play, Terminal, Trash2 } from "lucide-react";
+import { permissionsService } from "@/services/permissions";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
@@ -16,6 +17,13 @@ export default function CodingPage() {
   const [logs, setLogs] = useState<string[]>([]);
 
   const runCode = () => {
+    if (!permissionsService.isGranted("external_actions")) {
+      window.dispatchEvent(new CustomEvent("nova:permission-request", {
+        detail: { permission: "external_actions", tool: "coding.run", message: "Nova needs permission to execute code in the browser sandbox." },
+      }));
+      setLogs(["Permission required: allow External Actions, then run the code again."]);
+      return;
+    }
     setLogs([]);
     const capturedLogs: string[] = [];
     const customConsole = {

@@ -232,6 +232,66 @@ export async function deleteMemory(userId: string, memoryId: string) {
   }
 }
 
+// ── Calendar ───────────────────────────────────────────────────
+export interface RTDBCalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  duration: number;
+  color: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export async function saveCalendarEvent(userId: string, event: RTDBCalendarEvent): Promise<void> {
+  try {
+    await set(userPath(userId, "calendar", event.id), { ...event, updatedAt: Date.now() });
+  } catch (err) {
+    warnWrite("saveCalendarEvent", err);
+  }
+  try {
+    const stored = localStorage.getItem(`nova_calendar_${userId}`);
+    const events: RTDBCalendarEvent[] = stored ? JSON.parse(stored) : [];
+    const next = [event, ...events.filter((item) => item.id !== event.id)];
+    localStorage.setItem(`nova_calendar_${userId}`, JSON.stringify(next));
+  } catch { /* local fallback is best effort */ }
+}
+
+export async function getCalendarEvents(userId: string): Promise<RTDBCalendarEvent[]> {
+  let local: RTDBCalendarEvent[] = [];
+  try {
+    const stored = localStorage.getItem(`nova_calendar_${userId}`);
+    local = stored ? JSON.parse(stored) : [];
+  } catch { /* fall through */ }
+
+  try {
+    const snap = await get(userPath(userId, "calendar"));
+    if (snap.exists()) {
+      const byId = new Map<string, RTDBCalendarEvent>();
+      for (const event of [...(Object.values(snap.val()) as RTDBCalendarEvent[]), ...local]) {
+        if (event?.id) byId.set(event.id, event);
+      }
+      return [...byId.values()].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+    }
+  } catch { /* return local fallback */ }
+  return local.sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+}
+
+export async function deleteCalendarEvent(userId: string, eventId: string): Promise<void> {
+  try {
+    await remove(userPath(userId, "calendar", eventId));
+  } catch (err) {
+    warnWrite("deleteCalendarEvent", err);
+  }
+  try {
+    const stored = localStorage.getItem(`nova_calendar_${userId}`);
+    const events: RTDBCalendarEvent[] = stored ? JSON.parse(stored) : [];
+    localStorage.setItem(`nova_calendar_${userId}`, JSON.stringify(events.filter((event) => event.id !== eventId)));
+  } catch { /* local fallback is best effort */ }
+}
+
 // ── Conversations ────────────────────────────────────────────────
 export interface RTDBConversation {
   id: string;

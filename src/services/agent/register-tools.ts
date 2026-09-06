@@ -132,14 +132,14 @@ const calendarCreateTool: NovaTool = {
   },
   riskLevel: "low",
   confirmationRequired: false,
-  execute: async (args) => {
+  execute: async (args, context) => {
     const event = calendarService.create({
       title: args.title as string,
       date: args.date as string,
       time: args.time as string,
       description: (args.description as string) || "",
       duration: (args.duration as number) || 60,
-    });
+    }, context.userId);
     logActivity("calendar", `Created event: ${args.title} on ${args.date} at ${args.time}`, "calendar");
     return ok("calendar.create", event, `Created "${args.title}" on ${args.date} at ${args.time}`);
   },

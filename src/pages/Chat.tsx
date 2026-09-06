@@ -68,6 +68,14 @@ export default function Chat() {
   // Ref mirrors the state so TTS callbacks never read a stale closure value.
   const [voiceModeActive, setVoiceModeActive] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voiceLanguage] = useState(() => {
+    try {
+      const configured = JSON.parse(localStorage.getItem("nova_voice_settings") || "{}").language;
+      return configured === "hi" ? "hi-IN" : configured === "mr" ? "mr-IN" : "en-US";
+    } catch {
+      return "en-US";
+    }
+  });
   const voiceModeActiveRef = useRef(false);
   const setVoiceMode = useCallback((active: boolean) => {
     voiceModeActiveRef.current = active;
@@ -179,6 +187,7 @@ export default function Chat() {
   const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({
     onTranscript: handleTranscript,
     onError: handleVoiceError,
+    lang: voiceLanguage,
     continuous: true,
   });
 

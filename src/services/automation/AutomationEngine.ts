@@ -4,6 +4,14 @@
  */
 
 import type { Automation, AutomationRun, TriggerType, ConditionType, ActionType, AutomationAction, AutomationCondition } from "./AutomationTypes";
+import { notificationService } from "../notifications";
+import { taskService } from "../tasks/TaskService";
+import { calendarService } from "../calendar/CalendarService";
+import { emailService } from "../email/EmailService";
+import { unifiedMemory } from "../memory/MemoryService";
+import { addMemory } from "@/lib/rtdb";
+import { missionManager } from "../mission/MissionManager";
+import type { EmailAddress, EmailMessage } from "../email/EmailTypes";
 
 // ─── Storage ────────────────────────────────────────────────────────────────
 
@@ -136,6 +144,16 @@ class AutomationEngineImpl {
     return this.executeAutomation(automation, context);
   }
 
+  /** Execute an action list for UI builders that keep their own presentation model. */
+  async runActions(actions: AutomationAction[], context: Record<string, unknown> = {}): Promise<number> {
+    let executed = 0;
+    for (const action of actions) {
+      await this.executeAction(action, context);
+      executed += 1;
+    }
+    return executed;
+  }
+
   /**
    * Get all automations.
    */
@@ -213,28 +231,85 @@ class AutomationEngineImpl {
   private async executeAction(action: AutomationAction, context: Record<string, unknown>): Promise<void> {
     switch (action.type) {
       case "notify":
-        // Will be connected to NotificationService
-        console.log(`[Automation] Notify: ${action.config.message || "Event triggered"}`);
+        notificationService.send({
+          title: String(action.config.title || "Nova automation"),
+          body: String(action.config.message || "Event triggered"),
+          channel: (action.config.channel as "in_app" | "desktop" | "push" | "voice") || "in_app",
+          priority: (action.config.priority as "critical" | "high" | "medium" | "low") || "medium",
+          category: "automation",
+          silent: Boolean(action.config.silent),
+        });
         break;
 
       case "create_task":
-        // Will be connected to TaskService
-        console.log(`[Automation] Create task: ${action.config.title}`);
+        if (!context.userId) throw new Error("A userId is required to create an automated task");
+        await taskService.create(String(context.userId), {
+          title: String(action.config.title || "Automated task"),
+          description: action.config.description ? String(action.config.description) : undefined,
+          dueDate: action.config.dueDate ? String(action.config.dueDate) : undefined,
+          priority: (action.config.priority as "low" | "medium" | "high") || "medium",
+        });
         break;
 
       case "create_calendar_event":
-        // Will be connected to CalendarService
-        console.log(`[Automation] Create event: ${action.config.title}`);
+        calendarService.create({
+          title: String(action.config.title || "Automated event"),
+          description: action.config.description ? String(action.config.description) : undefined,
+          date: String(action.config.date || new Date().toISOString().slice(0, 10)),
+          time: String(action.config.time || "09:00"),
+          duration: Number(action.config.duration || 60),
+        }, context.userId ? String(context.userId) : undefined);
         break;
 
       case "send_email":
-        // Will be connected to EmailService
-        console.log(`[Automation] Send email to: ${action.config.to}`);
+        {
+          const to: EmailAddress[] = String(action.config.to || "")
+            .split(",")
+            .map((email) => ({ email: email.trim() }))
+            .filter((address) => address.email.includes("@"));
+          if (to.length === 0) throw new Error("A valid email recipient is required");
+          const now = Date.now();
+          const message: EmailMessage = {
+            id: `automation_email_${now}`,
+            from: { email: String(action.config.from || "") },
+            to,
+            subject: String(action.config.subject || "Nova automation"),
+            body: String(action.config.body || ""),
+            status: "sending",
+            operationId: `automation_${now}_${Math.random().toString(36).slice(2, 8)}`,
+            createdAt: now,
+            updatedAt: now,
+          };
+          const result = await emailService.send(message);
+          if (result.status === "failed") throw new Error("Email provider failed to send the message");
+        }
         break;
 
       case "run_mission":
-        // Will be connected to MissionManager
-        console.log(`[Automation] Run mission: ${action.config.goal}`);
+        if (!context.userId) throw new Error("A userId is required to run an automated mission");
+        await missionManager.create(
+          String(action.config.goal || "Complete the automated mission"),
+          { userId: String(context.userId), currentRoute: String(context.currentRoute || "/automations") },
+          "quick-action",
+          String(context.geminiKey || ""),
+        );
+        break;
+
+      case "update_memory":
+        const content = String(action.config.content || action.config.text || "");
+        await unifiedMemory.save({
+          content,
+          category: (action.config.category as "semantic" | "preference" | "important_event") || "semantic",
+          source: "assistant",
+          sourceContext: "automation",
+        });
+        if (context.userId) {
+          await addMemory(String(context.userId), {
+            category: (action.config.category as "fact" | "preference" | "person" | "project" | "note") || "note",
+            key: String(action.config.key || content.split(/\s+/).slice(0, 5).join(" ")),
+            content,
+          });
+        }
         break;
 
       case "webhook":
@@ -247,15 +322,13 @@ class AutomationEngineImpl {
               body: JSON.stringify(context),
             });
           } catch (err) {
-            console.error(`[Automation] Webhook failed:`, err);
+            throw new Error(`Webhook failed: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
         break;
 
       case "custom":
-        // Custom action placeholder
-        console.log(`[Automation] Custom action:`, action.config);
-        break;
+        throw new Error("Custom automation actions are not supported yet");
     }
   }
 
