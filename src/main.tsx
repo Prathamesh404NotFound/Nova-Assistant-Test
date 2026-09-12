@@ -7,6 +7,7 @@ import React, { Component, StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation, useNavigate, Navigate } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
+import { initCloudSync } from "@/services/data/NovaCloudDataService";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { AIServiceProvider } from "@/contexts/AIServiceProvider";
@@ -14,6 +15,9 @@ import { WakeWordProvider } from "@/contexts/WakeWordProvider";
 import { WakeWordActivator } from "@/components/WakeWordActivator";
 import { PermissionPrompt } from "@/components/PermissionPrompt";
 import "./index.css";
+
+// Offline write queue: flush pending Firebase writes when connection returns.
+initCloudSync();
 
 // Lazy load all pages
 const Landing = lazy(() => import("./pages/Landing"));

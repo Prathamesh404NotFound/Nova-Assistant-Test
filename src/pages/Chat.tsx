@@ -29,7 +29,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
-import { addMemory } from "@/lib/rtdb";
+import { saveMemory } from "@/services/data/NovaCloudDataService";
 import { permissionsService } from "@/services/permissions";
 import ReactMarkdown from "react-markdown";
 import { Collaboration } from "@/components/Collaboration";
@@ -68,6 +68,8 @@ export default function Chat() {
   // Ref mirrors the state so TTS callbacks never read a stale closure value.
   const [voiceModeActive, setVoiceModeActive] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  /** TTS playback failure — distinct from STT/mic errors. */
+  const [ttsError, setTtsError] = useState<string | null>(null);
   const [voiceLanguage] = useState(() => {
     try {
       const configured = JSON.parse(localStorage.getItem("nova_voice_settings") || "{}").language;
@@ -108,6 +110,20 @@ export default function Chat() {
           }, 300);
         }
       },
+      onError: (message) => {
+        // TTS failure must not break the response — show a clear voice error.
+        setTtsError(message);
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        // Voice loop: on TTS failure still return to listening if voice mode is active
+        if (voiceModeActiveRef.current) {
+          setTimeout(() => {
+            if (voiceModeActiveRef.current && !isSpeakingRef.current) {
+              startSTTRef.current();
+            }
+          }, 300);
+        }
+      },
     });
     ttsRouter.initialize();
   }, []);
@@ -124,6 +140,7 @@ export default function Chat() {
     ttsRouter.stop();
     setIsSpeaking(false);
     isSpeakingRef.current = false;
+    setTtsError(null);
   }, []);
 
   const handleNavigate = useCallback(
@@ -143,6 +160,7 @@ export default function Chat() {
     conversations,
     activeConvId,
     lastSource,
+    syncStatus,
     loadConversation,
     deleteConversationById,
     retryLastMessage,
@@ -150,8 +168,14 @@ export default function Chat() {
     apiKey: geminiKey,
     userId,
     onNavigate: handleNavigate,
+    // Auto-speak is governed by voice settings, NOT by voice mode (STT).
+    // Text-only chat still speaks when Auto Speak is enabled.
     onSpeak: (text) => {
-      indicSpeak(text);
+      const settings = ttsRouter.getSettings();
+      if (!settings.autoSpeak && !voiceModeActiveRef.current) return;
+      void ttsRouter.speak(text).catch((err) => {
+        console.warn("[TTS] Speak failed:", err);
+      });
     },
   });
 
@@ -364,9 +388,20 @@ export default function Chat() {
       const isPref = /\b(i (like|love|prefer|hate|don't like)|i always|i never|my favorite)\b/i.test(content);
       const category = isPref ? "preference" : isPerson ? "person" : "note";
       try {
-        await addMemory(userId, { category, key, content: body || content });
-        logActivity("memory", `Saved memory: ${key}`, "brain");
-        return true;
+        // Firebase is authoritative — wait for the real write result.
+        const result = await saveMemory(userId, { category, key, content: body || content });
+        if (result.success) {
+          logActivity("memory", `Saved memory: ${key}`, "brain");
+          return true;
+        }
+        // Honest failure — never claim "I'll remember that" when the write failed.
+        console.warn(`[MEMORY] Firebase memory save failed (${result.errorCode}): ${result.message}`);
+        if (result.pending) {
+          logActivity("memory", `Memory queued offline: ${key}`, "clock");
+        } else {
+          logActivity("memory", `Memory save failed: ${result.message}`, "alert-triangle");
+        }
+        return false;
       } catch (err) {
         console.warn("[MEMORY] Failed to save memory from chat:", err);
         return false;
@@ -806,6 +841,24 @@ export default function Chat() {
             </motion.div>
           )}
           <form onSubmit={handleSubmit} className="flex items-end gap-2 max-w-3xl mx-auto">
+          {ttsError && (
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto mb-2 max-w-3xl w-full flex items-center justify-between p-2.5 rounded-lg bg-[#f97316]/10 border border-[#f97316]/25"
+            >
+              <p className="text-xs text-[#fdba74]">🔊 {ttsError} — response is still shown above.</p>
+              <Button variant="ghost" size="sm" className="text-[#fdba74] text-xs" onClick={() => { setTtsError(null); ttsRouter.clearError(); }}>
+                Dismiss
+              </Button>
+            </motion.div>
+          )}
+          {syncStatus === "PENDING" && (
+            <p className="mx-auto mb-2 max-w-3xl w-full text-[10px] font-mono text-[#f59e0b]">◌ Cloud sync pending — will upload when connection returns</p>
+          )}
+          {syncStatus === "FAILED" && (
+            <p className="mx-auto mb-2 max-w-3xl w-full text-[10px] font-mono text-[#f43f5e]">⚠ Cloud save failed — message is local only (check Firebase permissions)</p>
+          )}
             {isSupported && (
               <Button
                 type="button"

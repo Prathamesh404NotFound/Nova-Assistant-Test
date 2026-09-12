@@ -64,7 +64,13 @@ if (!env.firebaseReady) {
 }
 
 export function getFirebaseStatus(): FirebaseStatus {
-  if (auth) return { configured: true, initialized: true };
+  if (auth) {
+    return {
+      configured: true,
+      initialized: true,
+      detail: env.firebase.databaseURL ? undefined : "databaseURL missing — RTDB writes will fail",
+    };
+  }
   return {
     configured: env.firebaseReady,
     initialized: false,
@@ -74,6 +80,14 @@ export function getFirebaseStatus(): FirebaseStatus {
 
 export function isFirebaseReady(): boolean {
   return auth !== null;
+}
+
+/**
+ * RTDB readiness is distinct from app initialization: the configured
+ * databaseURL must exist, otherwise RTDB writes would fail at runtime.
+ */
+export function isRealtimeDatabaseReady(): boolean {
+  return db !== null && !!env.firebase.databaseURL;
 }
 
 export { app, auth, db, googleProvider };

@@ -7,11 +7,12 @@ import {
   db,
   googleProvider,
   isFirebaseReady,
+  isRealtimeDatabaseReady,
   getFirebaseStatus,
 } from "@/services/firebase/FirebaseService";
 
 // Backwards-compatible facade — all new code should import from
 // "@/services/firebase" directly. This file keeps existing imports working.
 
-export { app, auth, db, googleProvider, isFirebaseReady, getFirebaseStatus };
+export { app, auth, db, googleProvider, isFirebaseReady, isRealtimeDatabaseReady, getFirebaseStatus };
 export type { FirebaseApp, Auth, Database };

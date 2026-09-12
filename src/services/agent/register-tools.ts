@@ -7,6 +7,7 @@
 import { toolRegistry } from "./ToolRegistry";
 import type { NovaTool, ToolContext, ToolResult } from "./types";
 import { memoryService } from "../memory/MemoryService";
+import { saveMemory as cloudSaveMemory, getMemories as cloudGetMemories, deleteMemory as cloudDeleteMemory } from "../data/NovaCloudDataService";
 import { calendarService } from "../calendar/CalendarService";
 import { taskService } from "../tasks/TaskService";
 import { computerService } from "../computer/ComputerService";
@@ -52,12 +53,28 @@ const memorySaveTool: NovaTool = {
   },
   riskLevel: "safe",
   confirmationRequired: false,
-  execute: async (args) => {
-    const memory = await memoryService.save({
-      content: args.content as string,
-    });
-    logActivity("memory", `Saved memory: ${(args.content as string).slice(0, 50)}`, "brain");
-    return ok("memory.save", memory, `Memory saved: ${(args.content as string).slice(0, 80)}`);
+  execute: async (args, context) => {
+    const content = args.content as string;
+    // Authenticated → Firebase is authoritative. Wait for the real write result.
+    if (context.userId) {
+      const result = await cloudSaveMemory(context.userId, {
+        category: "note",
+        key: content.split(/\s+/).slice(0, 5).join(" "),
+        content,
+      });
+      if (result.success) {
+        logActivity("memory", `Saved memory: ${content.slice(0, 50)}`, "brain");
+        return ok("memory.save", { id: result.id, synced: true }, `Memory saved: ${content.slice(0, 80)}`);
+      }
+      if (result.pending) {
+        return ok("memory.save", { synced: false, pending: true }, `Saved locally — will sync to cloud when you're back online.`);
+      }
+      return fail("memory.save", result.errorCode ?? "FIREBASE_WRITE", `I couldn't save that memory: ${result.message}. No changes were made.`);
+    }
+    // Signed-out → local-only memory (explicitly identified fallback)
+    const memory = await memoryService.save({ content });
+    logActivity("memory", `Saved memory (local): ${content.slice(0, 50)}`, "brain");
+    return ok("memory.save", memory, `Memory saved locally (sign in to sync across devices): ${content.slice(0, 80)}`);
   },
 };
 
@@ -73,7 +90,18 @@ const memorySearchTool: NovaTool = {
   },
   riskLevel: "safe",
   confirmationRequired: false,
-  execute: async (args) => {
+  execute: async (args, context) => {
+    // Authenticated → search Firebase (authoritative), fall back to local
+    if (context.userId) {
+      const cloud = await cloudGetMemories(context.userId);
+      if (cloud.success) {
+        const q = (args.query as string).toLowerCase();
+        const matches = cloud.data.filter(
+          (m) => m.content.toLowerCase().includes(q) || m.key.toLowerCase().includes(q)
+        );
+        return ok("memory.search", matches, `Found ${matches.length} matching memories`);
+      }
+    }
     const results = await memoryService.search({ query: args.query as string });
     return ok("memory.search", results, `Found ${results.length} matching memories`);
   },
@@ -86,7 +114,14 @@ const memoryListTool: NovaTool = {
   inputSchema: { properties: {} },
   riskLevel: "safe",
   confirmationRequired: false,
-  execute: async () => {
+  execute: async (_args, context) => {
+    // Authenticated → Firebase is authoritative, fall back to local
+    if (context.userId) {
+      const cloud = await cloudGetMemories(context.userId);
+      if (cloud.success) {
+        return ok("memory.list", cloud.data, `You have ${cloud.data.length} saved memories`);
+      }
+    }
     const memories = await memoryService.list();
     return ok("memory.list", memories, `You have ${memories.length} saved memories`);
   },
@@ -104,7 +139,14 @@ const memoryDeleteTool: NovaTool = {
   },
   riskLevel: "medium",
   confirmationRequired: true,
-  execute: async (args) => {
+  execute: async (args, context) => {
+    // Authenticated → delete from Firebase (authoritative) too
+    if (context.userId) {
+      const result = await cloudDeleteMemory(context.userId, args.id as string);
+      if (!result.success && !result.pending) {
+        return fail("memory.delete", result.errorCode ?? "FIREBASE_WRITE", `I couldn't delete that memory: ${result.message}. No changes were made.`);
+      }
+    }
     const deleted = memoryService.delete(args.id as string);
     if (deleted) {
       logActivity("memory", `Deleted memory: ${args.id}`, "brain");

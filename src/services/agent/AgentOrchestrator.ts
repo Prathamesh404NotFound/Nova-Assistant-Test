@@ -13,6 +13,8 @@ import { toolRegistry } from "./ToolRegistry";
 import { toolExecutor } from "./ToolExecutor";
 import { registerAllTools } from "./register-tools";
 import { missionManager } from "@/services/mission";
+import { permissionsService, PermissionDeniedError, type PermissionId } from "@/services/permissions/PermissionsService";
+import { resolveGeminiKey } from "@/services/ai/gemini/GeminiClient";
 import {
   planAndExecuteTools,
   buildFunctionDeclarations,
@@ -236,6 +238,58 @@ const INTENT_PATTERNS: IntentPattern[] = [
   },
 ];
 
+/** Maps tool names to the permission that gates them. */
+const TOOL_PERMISSION: Record<string, PermissionId> = {
+  "memory.save": "memory_saving",
+  "memory.delete": "memory_saving",
+  "memory.list": "memory_saving",
+  "memory.search": "memory_saving",
+  "calendar.create": "calendar",
+  "calendar.delete": "calendar",
+  "calendar.search": "calendar",
+  "calendar.list": "calendar",
+  "email.draft": "email",
+  "email.list": "email",
+  "email.search": "email",
+  "device.toggle": "external_actions",
+  "device.adjust": "external_actions",
+  "device.list": "external_actions",
+  "web.search": "browser_research",
+  "web.fetch": "browser_research",
+};
+
+/** Side-effecting tools get idempotency via request IDs. */
+const SIDE_EFFECT_TOOLS = new Set([
+  "memory.save",
+  "memory.delete",
+  "calendar.create",
+  "calendar.delete",
+  "task.create",
+  "task.complete",
+  "task.delete",
+  "email.draft",
+  "device.toggle",
+  "device.adjust",
+]);
+
+let _executedRequestIds = new Set<string>();
+
+function makeRequestId(tool: string): string {
+  return `nova-${Date.now().toString(36)}-${tool}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isDuplicate(tool: string, args: Record<string, unknown>): boolean {
+  // 2-second dedup window: same tool + same args = accidental double-fire
+  const key = `${tool}:${JSON.stringify(args)}`;
+  if (_executedRequestIds.has(key)) return true;
+  _executedRequestIds.add(key);
+  setTimeout(() => _executedRequestIds.delete(key), 2000);
+  if (_executedRequestIds.size > 200) {
+    _executedRequestIds = new Set([..._executedRequestIds].slice(-100));
+  }
+  return false;
+}
+
 // ─── Confidence Thresholds ───────────────────────────────────────────────────
 
 const HIGH_CONFIDENCE = 0.85;
@@ -269,7 +323,7 @@ class AgentOrchestratorImpl {
 
     // 1. Check if this should become a mission
     if (missionManager.shouldCreateMission(input.text)) {
-      const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "";
+      const geminiKey = resolveGeminiKey();
       // Without a key, mission planning is guaranteed to fail — defer to AI chat instead.
       if (!geminiKey) {
         return {
@@ -436,10 +490,38 @@ class AgentOrchestratorImpl {
       };
     }
 
-    // Execute via ToolExecutor
-    const result = await toolExecutor.execute(toolName, args, context, {
-      source: context.source === "voice" ? "voice" : "chat",
-    });
+    // Permission gate — revoked permission blocks the action with a clear message
+    const requiredPermission = TOOL_PERMISSION[toolName];
+    if (requiredPermission && !permissionsService.isGranted(requiredPermission)) {
+      const def = permissionsService.getAll().find((p) => p.id === requiredPermission);
+      return {
+        response: `That action needs ${def?.label ?? requiredPermission} permission, which is currently disabled. Enable it in Settings → Security.`,
+        actionsExecuted: [],
+        route: decision,
+        durationMs: Date.now() - startMs,
+      };
+    }
+
+    // Idempotency — identical side-effecting call within 2s window is ignored
+    if (SIDE_EFFECT_TOOLS.has(toolName) && isDuplicate(toolName, args)) {
+      return {
+        response: "That action was just executed — skipping the duplicate.",
+        actionsExecuted: [],
+        route: decision,
+        durationMs: Date.now() - startMs,
+      };
+    }
+
+    // Execute via ToolExecutor with a request ID for traceability
+    const requestId = SIDE_EFFECT_TOOLS.has(toolName) ? makeRequestId(toolName) : undefined;
+    const result = await toolExecutor.execute(
+      toolName,
+      requestId ? { ...args, __requestId: requestId } : args,
+      context,
+      {
+        source: context.source === "voice" ? "voice" : "chat",
+      }
+    );
 
     // Build response from result
     let response: string;
@@ -511,7 +593,7 @@ class AgentOrchestratorImpl {
     initialActions: Array<{ tool: string; success: boolean; result?: ToolResult }>
   ): Promise<AgentResult> {
     const actionsExecuted = [...initialActions];
-    const geminiKey = (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "";
+    const geminiKey = resolveGeminiKey();
 
     // No key — skip the AI tool loop entirely so we don't poison the health
     // monitor with guaranteed failures. Defer to the AI chat pipeline instead.

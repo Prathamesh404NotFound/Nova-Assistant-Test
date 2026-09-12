@@ -180,6 +180,27 @@ class PermissionsService {
   getAll(): Array<PermissionDef & { granted: boolean }> {
     return REQUIRED_PERMISSIONS.map((def) => ({ ...def, granted: !!this.map[def.id] }));
   }
+
+  /**
+   * Hard gate: throws a user-friendly error when the permission is revoked.
+   * Use before any side-effecting operation (tools, external actions).
+   */
+  require(id: PermissionId): void {
+    if (this.isGranted(id)) return;
+    const def = REQUIRED_PERMISSIONS.find((p) => p.id === id);
+    throw new PermissionDeniedError(
+      `${def?.label ?? id} permission is disabled. Enable it in Settings → Security to allow this action.`
+    );
+  }
+}
+
+export class PermissionDeniedError extends Error {
+  readonly permission: PermissionId;
+  constructor(message: string, permission?: PermissionId) {
+    super(message);
+    this.name = "PermissionDeniedError";
+    if (permission) this.permission = permission;
+  }
 }
 
 export const permissionsService = new PermissionsService();

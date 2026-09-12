@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { LocalAIPanel } from "@/components/local-ai/LocalAIPanel";
 import { GeminiHealthCheck } from "@/components/GeminiHealthCheck";
 import { ttsRouter, type VoiceSettings } from "@/services/tts/tts-router";
+import { checkFirebaseHealth } from "@/services/data/NovaCloudDataService";
+import { useAuth } from "@/hooks/use-auth";
 import { permissionsService, REQUIRED_PERMISSIONS, type PermissionId } from "@/services/permissions";
 import { BARK_VOICE_PRESETS } from "@/services/tts/bark-voices";
 import { cn } from "@/lib/utils";
@@ -54,12 +56,16 @@ const fadeUp = {
 };
 
 export default function SettingsPage() {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<SettingsTab>("general");
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState(false);
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(ttsRouter.getSettings());
   const [barkStatus, setBarkStatus] = useState(ttsRouter.isBarkAvailable() ? "ready" : "unavailable");
+  const [voiceTest, setVoiceTest] = useState<Awaited<ReturnType<typeof ttsRouter.testVoice>> | null>(null);
+  const [firebaseHealth, setFirebaseHealth] = useState<Awaited<ReturnType<typeof checkFirebaseHealth>> | null>(null);
+  const [firebaseChecking, setFirebaseChecking] = useState(false);
   const [devMode, setDevMode] = useState(() => localStorage.getItem("nova_dev_mode") === "true");
   const [permissions, setPermissions] = useState(() => permissionsService.getAll());
   const [permBusy, setPermBusy] = useState(false);
@@ -207,6 +213,47 @@ export default function SettingsPage() {
             </div>
             <LocalAIPanel />
             <GeminiHealthCheck apiKey={keys["gemini"]} />
+
+            {/* Firebase health — real read/write probe, never a fake "Connected" */}
+            <Card className="nova-glass p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-[#10b981]" />
+                  <p className="text-sm font-medium text-[#e8e8f8]">Firebase Cloud Sync</p>
+                </div>
+                <Button
+                  variant="ghost" size="sm"
+                  className="text-[#00d4ff] text-xs"
+                  disabled={firebaseChecking}
+                  onClick={async () => {
+                    setFirebaseChecking(true);
+                    try {
+                      setFirebaseHealth(await checkFirebaseHealth(user?.uid));
+                    } finally {
+                      setFirebaseChecking(false);
+                    }
+                  }}
+                >
+                  {firebaseChecking ? "Checking..." : "Check connection"}
+                </Button>
+              </div>
+              {firebaseHealth && (
+                <div className="text-[11px] font-mono rounded-lg bg-[#101024] border border-[#252540] p-3 space-y-1">
+                  <div className={firebaseHealth.databaseReady ? "text-[#10b981]" : "text-[#f43f5e]"}>
+                    database: {firebaseHealth.databaseReady ? "ready" : "not configured"}
+                  </div>
+                  <div className="text-[#6e6e8a]">signed in: {firebaseHealth.currentUser ? "yes" : "no"}</div>
+                  <div className={firebaseHealth.writeTest ? "text-[#10b981]" : firebaseHealth.currentUser ? "text-[#f43f5e]" : "text-[#6e6e8a]"}>
+                    write test: {firebaseHealth.currentUser ? (firebaseHealth.writeTest ? "passed" : "failed") : "requires sign-in"}
+                  </div>
+                  <div className={firebaseHealth.readTest ? "text-[#10b981]" : firebaseHealth.currentUser ? "text-[#f43f5e]" : "text-[#6e6e8a]"}>
+                    read test: {firebaseHealth.currentUser ? (firebaseHealth.readTest ? "passed" : "failed") : "requires sign-in"}
+                  </div>
+                  <div className="text-[#6e6e8a]">latency: {firebaseHealth.latencyMs}ms</div>
+                  {firebaseHealth.error && <div className="text-[#f43f5e]">error: {firebaseHealth.error}</div>}
+                </div>
+              )}
+            </Card>
 
             <div className="border-t border-[#252540] pt-4">
               <div className="flex items-center gap-2 mb-3">
@@ -358,11 +405,23 @@ export default function SettingsPage() {
                 </label>
               </div>
 
-              {/* Test */}
+              {/* Test — exercises the exact production speech path */}
               <Button variant="ghost" size="sm" className="w-full text-[#00d4ff] hover:bg-[#00d4ff]/10"
-                onClick={async () => { try { await ttsRouter.speak("Hello! I'm Nova. Voice is working perfectly."); } catch { /* ignore */ } }}>
-                <Mic2 className="h-3.5 w-3.5 mr-2" /> Test Voice
+                onClick={async () => {
+                  const result = await ttsRouter.testVoice();
+                  setVoiceTest(result);
+                }}>
+                <Mic2 className="h-3.5 w-3.5 mr-2" /> Test Nova Voice
               </Button>
+              {voiceTest && (
+                <div className="text-[11px] font-mono rounded-lg bg-[#101024] border border-[#252540] p-3 space-y-1">
+                  <div className={voiceTest.state === "ERROR" ? "text-[#f43f5e]" : "text-[#10b981]"}>
+                    status: {voiceTest.state}{voiceTest.error ? ` — ${voiceTest.error}` : ""}
+                  </div>
+                  <div className="text-[#6e6e8a]">provider: {voiceTest.provider}</div>
+                  {voiceTest.lastSpokenText && <div className="text-[#6e6e8a]">spoke: “{voiceTest.lastSpokenText.slice(0, 60)}”</div>}
+                </div>
+              )}
             </Card>
           </motion.div>
         )}
