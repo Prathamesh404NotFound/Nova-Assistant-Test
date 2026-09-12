@@ -20,6 +20,15 @@ const TOOL_HINTS: Array<{ re: RegExp; klass: NovaTaskClass; tools: string[] }> =
   { re: /^(?:schedule|create|add|set up)\b.*\b(event|meeting|appointment)\b/i, klass: "tool_action", tools: ["calendar.create"] },
   { re: /\b(what'?s on my calendar|my events|upcoming events|my tasks|remind me|add task)\b/i, klass: "tool_action", tools: ["calendar.list", "task.create"] },
   { re: /\b(send|compose|draft)\b.*\b(email|mail)\b/i, klass: "tool_action", tools: ["email.compose"] },
+  // Environment layer — observe/control the user's computing environment
+  { re: /\b(open|launch|start)\b\s+(?!.*(calendar|settings|chat|dashboard|email|memory|files page))\S+$/i, klass: "tool_action", tools: ["desktop.launchApp"] },
+  { re: /\b(screenshot|take a screenshot|capture (the )?screen)\b/i, klass: "tool_action", tools: ["screen.capture"] },
+  { re: /\b(read|what'?s on|describe|analyze)\b.*\bscreen\b/i, klass: "tool_action", tools: ["screen.describe"] },
+  { re: /\b(what apps|which apps|open apps|open windows|list windows)\b/i, klass: "tool_action", tools: ["desktop.listWindows"] },
+  { re: /\b(memory usage|cpu|battery|system (status|info|health)|disk|uptime)\b/i, klass: "tool_action", tools: ["system.status"] },
+  { re: /\b(create|make|new)\b.*\bfile (called|named)\b/i, klass: "tool_action", tools: ["files.create"] },
+  { re: /\b(what changed|changes)\b.*\b(screen)\b/i, klass: "tool_action", tools: ["screen.describe"] },
+  { re: /\b(notify|notify me|remind me with)\b/i, klass: "tool_action", tools: ["notify.send"] },
 ];
 
 /** Signals for heavier reasoning / long-form generation. */

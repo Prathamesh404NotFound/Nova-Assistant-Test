@@ -15,6 +15,7 @@ import { perceptionService } from "../perception/PerceptionService";
 import { searchService } from "../web/SearchService";
 import { browserService } from "../web/BrowserService";
 import { emailService } from "../email/EmailService";
+import { registerEnvironmentTools } from "../environment/register-environment-tools";
 import {
   logActivity,
   addEmailDraft,
@@ -1533,6 +1534,9 @@ export function registerAllTools(): void {
   // Email (real send)
   toolRegistry.register(emailSendTool);
   toolRegistry.register(emailReadTool);
+
+  // Environment layer (system status, notifications, safe files, capabilities)
+  registerEnvironmentTools();
 
   console.log(`[ToolRegistry] Registered ${toolRegistry.list().length} tools`);
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Sidebar } from "./sidebar";
 import { MobileNav } from "./mobile-nav";
+import { EnvironmentHud } from "@/components/nova/EnvironmentHud";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   return (
@@ -10,6 +11,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {children}
       </main>
       <MobileNav />
+      <EnvironmentHud />
     </div>
   );
 }

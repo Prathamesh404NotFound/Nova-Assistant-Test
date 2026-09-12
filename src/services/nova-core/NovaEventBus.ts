@@ -29,6 +29,15 @@ export interface NovaEventPayloads {
   "network.offline": Record<string, never>;
   "network.online": Record<string, never>;
   "automation.triggered": { automationId: string; input: string };
+  // Environment layer events
+  "screen.changed": { hash: string };
+  "app.opened": { application: string; bridge: boolean };
+  "app.closed": { application: string };
+  "network.changed": { online: boolean };
+  "battery.changed": { level: number | null; charging: boolean | null };
+  "file.created": { name: string; size: number };
+  "file.modified": { name: string };
+  "file.downloaded": { name: string };
 }
 
 export type NovaEventName = keyof NovaEventPayloads;
