@@ -18,6 +18,15 @@ function userPath(userId: string, ...segments: string[]) {
   return ref(db, `users/${userId}/${segments.join("/")}`);
 }
 
+/**
+ * Surface RTDB write failures in the console instead of swallowing them —
+ * silent failures were indistinguishable from "data didn't save".
+ */
+function warnWrite(context: string, err: unknown): void {
+  const code = (err as { code?: string })?.code ?? "";
+  console.warn(`[RTDB] ${context} write failed${code ? ` (${code})` : ""}:`, err);
+}
+
 // ── Tasks ────────────────────────────────────────────────────────
 export interface RTDBTask {
   id: string;
@@ -48,8 +57,8 @@ export async function createTask(
       newTask.id = taskRef.key;
       await set(taskRef, newTask);
     }
-  } catch (_err) {
-    /* fallback to local storage */
+  } catch (err) {
+    warnWrite("createTask", err);
   }
 
   try {
@@ -65,23 +74,30 @@ export async function createTask(
 }
 
 export async function getTasks(userId: string): Promise<RTDBTask[]> {
+  const local: RTDBTask[] = (() => {
+    try {
+      const stored = localStorage.getItem(`nova_tasks_${userId}`);
+      return stored ? (JSON.parse(stored) as RTDBTask[]) : [];
+    } catch {
+      return [];
+    }
+  })();
+
   try {
     const snap = await get(userPath(userId, "tasks"));
     if (snap.exists()) {
-      return Object.values(snap.val()) as RTDBTask[];
+      const remote = Object.values(snap.val()) as RTDBTask[];
+      const byId = new Map<string, RTDBTask>();
+      for (const t of [...remote, ...local]) {
+        if (t?.id) byId.set(t.id, t);
+      }
+      return [...byId.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     }
   } catch (_err) {
-    /* fallback */
+    /* fall through to local-only */
   }
 
-  try {
-    const stored = localStorage.getItem(`nova_tasks_${userId}`);
-    if (stored) return JSON.parse(stored);
-    localStorage.setItem(`nova_tasks_${userId}`, JSON.stringify(DEFAULT_LOCAL_TASKS));
-    return DEFAULT_LOCAL_TASKS;
-  } catch (_e) {
-    return DEFAULT_LOCAL_TASKS;
-  }
+  return [...local].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
 export async function updateTask(
@@ -94,8 +110,8 @@ export async function updateTask(
       ...data,
       updatedAt: Date.now(),
     });
-  } catch (_err) {
-    /* fallback */
+  } catch (err) {
+    warnWrite("updateTask", err);
   }
 
   try {
@@ -111,8 +127,8 @@ export async function updateTask(
 export async function deleteTask(userId: string, taskId: string) {
   try {
     await remove(userPath(userId, "tasks", taskId));
-  } catch (_err) {
-    /* fallback */
+  } catch (err) {
+    warnWrite("deleteTask", err);
   }
 
   try {
@@ -154,8 +170,8 @@ export async function addMemory(
       newMem.id = memRef.key;
       await set(memRef, newMem);
     }
-  } catch (_e) {
-    /* fallback */
+  } catch (err) {
+    warnWrite("addMemory", err);
   }
 
   try {
@@ -171,30 +187,39 @@ export async function addMemory(
 }
 
 export async function getMemories(userId: string): Promise<RTDBMemory[]> {
+  const local: RTDBMemory[] = (() => {
+    try {
+      const stored = localStorage.getItem(`nova_memories_${userId}`);
+      return stored ? (JSON.parse(stored) as RTDBMemory[]) : [];
+    } catch {
+      return [];
+    }
+  })();
+
   try {
     const snap = await get(userPath(userId, "memories"));
     if (snap.exists()) {
-      return Object.values(snap.val()) as RTDBMemory[];
+      const remote = Object.values(snap.val()) as RTDBMemory[];
+      // Merge remote and local by id — local-only entries (e.g. saved while
+      // the RTDB write failed) must still appear in the memory panel.
+      const byId = new Map<string, RTDBMemory>();
+      for (const m of [...remote, ...local]) {
+        if (m?.id) byId.set(m.id, m);
+      }
+      return [...byId.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
     }
   } catch (_e) {
-    /* fallback */
+    /* fall through to local-only */
   }
 
-  try {
-    const stored = localStorage.getItem(`nova_memories_${userId}`);
-    if (stored) return JSON.parse(stored);
-    localStorage.setItem(`nova_memories_${userId}`, JSON.stringify(DEFAULT_LOCAL_MEMORIES));
-    return DEFAULT_LOCAL_MEMORIES;
-  } catch (_e) {
-    return DEFAULT_LOCAL_MEMORIES;
-  }
+  return [...local].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
 }
 
 export async function deleteMemory(userId: string, memoryId: string) {
   try {
     await remove(userPath(userId, "memories", memoryId));
-  } catch (_e) {
-    /* fallback */
+  } catch (err) {
+    warnWrite("deleteMemory", err);
   }
 
   try {
@@ -205,6 +230,66 @@ export async function deleteMemory(userId: string, memoryId: string) {
   } catch (_e) {
     /* ignore */
   }
+}
+
+// ── Calendar ───────────────────────────────────────────────────
+export interface RTDBCalendarEvent {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  duration: number;
+  color: string;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export async function saveCalendarEvent(userId: string, event: RTDBCalendarEvent): Promise<void> {
+  try {
+    await set(userPath(userId, "calendar", event.id), { ...event, updatedAt: Date.now() });
+  } catch (err) {
+    warnWrite("saveCalendarEvent", err);
+  }
+  try {
+    const stored = localStorage.getItem(`nova_calendar_${userId}`);
+    const events: RTDBCalendarEvent[] = stored ? JSON.parse(stored) : [];
+    const next = [event, ...events.filter((item) => item.id !== event.id)];
+    localStorage.setItem(`nova_calendar_${userId}`, JSON.stringify(next));
+  } catch { /* local fallback is best effort */ }
+}
+
+export async function getCalendarEvents(userId: string): Promise<RTDBCalendarEvent[]> {
+  let local: RTDBCalendarEvent[] = [];
+  try {
+    const stored = localStorage.getItem(`nova_calendar_${userId}`);
+    local = stored ? JSON.parse(stored) : [];
+  } catch { /* fall through */ }
+
+  try {
+    const snap = await get(userPath(userId, "calendar"));
+    if (snap.exists()) {
+      const byId = new Map<string, RTDBCalendarEvent>();
+      for (const event of [...(Object.values(snap.val()) as RTDBCalendarEvent[]), ...local]) {
+        if (event?.id) byId.set(event.id, event);
+      }
+      return [...byId.values()].sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+    }
+  } catch { /* return local fallback */ }
+  return local.sort((a, b) => `${a.date}${a.time}`.localeCompare(`${b.date}${b.time}`));
+}
+
+export async function deleteCalendarEvent(userId: string, eventId: string): Promise<void> {
+  try {
+    await remove(userPath(userId, "calendar", eventId));
+  } catch (err) {
+    warnWrite("deleteCalendarEvent", err);
+  }
+  try {
+    const stored = localStorage.getItem(`nova_calendar_${userId}`);
+    const events: RTDBCalendarEvent[] = stored ? JSON.parse(stored) : [];
+    localStorage.setItem(`nova_calendar_${userId}`, JSON.stringify(events.filter((event) => event.id !== eventId)));
+  } catch { /* local fallback is best effort */ }
 }
 
 // ── Conversations ────────────────────────────────────────────────
@@ -308,10 +393,14 @@ export function onTasksChange(
   callback: (tasks: RTDBTask[]) => void
 ): () => void {
   const tasksRef = userPath(userId, "tasks");
-  return onValue(tasksRef, (snap) => {
-    if (!snap.exists()) { callback([]); return; }
-    callback(Object.values(snap.val()) as RTDBTask[]);
-  });
+  return onValue(
+    tasksRef,
+    (snap) => {
+      if (!snap.exists()) { callback([]); return; }
+      callback(Object.values(snap.val()) as RTDBTask[]);
+    },
+    (err) => console.warn("[RTDB] tasks listener error:", err)
+  );
 }
 
 export function onMemoriesChange(
@@ -319,8 +408,12 @@ export function onMemoriesChange(
   callback: (memories: RTDBMemory[]) => void
 ): () => void {
   const memRef = userPath(userId, "memories");
-  return onValue(memRef, (snap) => {
-    if (!snap.exists()) { callback([]); return; }
-    callback(Object.values(snap.val()) as RTDBMemory[]);
-  });
+  return onValue(
+    memRef,
+    (snap) => {
+      if (!snap.exists()) { callback([]); return; }
+      callback(Object.values(snap.val()) as RTDBMemory[]);
+    },
+    (err) => console.warn("[RTDB] memories listener error:", err)
+  );
 }

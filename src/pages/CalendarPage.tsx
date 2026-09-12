@@ -11,6 +11,7 @@ import {
   deleteEvent,
   type CalendarEvent,
 } from "@/lib/local-store";
+import { getCalendarEvents, saveCalendarEvent, deleteCalendarEvent } from "@/lib/rtdb";
 import { logActivity } from "@/lib/local-store";
 import {
   Calendar,
@@ -60,18 +61,26 @@ export default function CalendarPage() {
   const [viewMonth, setViewMonth] = useState(new Date().getMonth());
   const [viewYear, setViewYear] = useState(new Date().getFullYear());
   const [selectedDay, setSelectedDay] = useState<number | null>(new Date().getDate());
+  const userId = user?.uid ?? "";
 
   useEffect(() => {
-    setEvents(getEvents());
-  }, []);
+    let active = true;
+    const load = async () => {
+      const local = getEvents();
+      const remote = userId ? await getCalendarEvents(userId) : [];
+      if (active) setEvents(remote.length > 0 ? remote : local);
+    };
+    void load();
+    return () => { active = false; };
+  }, [userId]);
 
   const refresh = useCallback(() => {
     setEvents(getEvents());
   }, []);
 
-  const handleAdd = useCallback(() => {
+  const handleAdd = useCallback(async () => {
     if (!newTitle.trim()) return;
-    addEvent({
+    const event = addEvent({
       title: newTitle.trim(),
       description: newDesc.trim(),
       date: newDate,
@@ -79,21 +88,23 @@ export default function CalendarPage() {
       duration: newDuration,
       color: newColor,
     });
+    if (userId) await saveCalendarEvent(userId, event);
     logActivity("calendar", `Created event: ${newTitle.trim()}`, "calendar");
     setNewTitle("");
     setNewDesc("");
     setShowNew(false);
     refresh();
-  }, [newTitle, newDesc, newDate, newTime, newDuration, newColor, refresh]);
+  }, [newTitle, newDesc, newDate, newTime, newDuration, newColor, userId, refresh]);
 
   const handleDelete = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const evt = events.find((e) => e.id === id);
       deleteEvent(id);
+      if (userId) await deleteCalendarEvent(userId, id);
       if (evt) logActivity("calendar", `Deleted event: ${evt.title}`, "calendar");
       refresh();
     },
-    [events, refresh]
+    [events, userId, refresh]
   );
 
   const daysInMonth = getDaysInMonth(viewYear, viewMonth);

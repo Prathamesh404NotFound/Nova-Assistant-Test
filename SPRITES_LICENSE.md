@@ -2,9 +2,13 @@
 
 ## Origin
 
-All 14 Nova sprite images in `src/assets/nova/` are **original artwork created specifically
-for this project** (the Nova Assistant). They were not downloaded from any third-party
-source and contain no copyrighted characters, brands, logos, or third-party designs.
+The active PNG sprite set is a deterministic derivative of the user-provided reference
+image `src/assets/nova/nova-reference.jpg`, using crop, resize, brightness, saturation,
+and contrast adjustments. The image's original creator/license was not supplied in the
+project artifacts, so these derivative files should not be redistributed outside the
+user's authorized project until provenance is confirmed.
+
+The existing SVG sprite set below remains original project artwork.
 
 ## Covered files
 
@@ -23,11 +27,12 @@ source and contain no copyrighted characters, brands, logos, or third-party desi
 - `nova-processing.svg`
 - `nova-error.svg`
 
+The active derived files are the matching `nova-*.png` files plus `nova-reference.jpg`.
+
 ## License
 
-These original assets are part of the Nova Assistant project and inherit the project's
-existing licensing. No external license attribution is required. No third-party assets
-were used in their creation.
+The original SVG assets inherit the project's existing licensing. The derived PNG files
+inherit the source image's permissions and must be treated as user-provided material.
 
 ## Design notes
 

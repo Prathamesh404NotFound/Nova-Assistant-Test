@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
 import {
   Mic,
   Brain,
@@ -139,32 +140,7 @@ export default function Landing() {
             transition={{ duration: 0.6 }}
             className="mb-10 flex justify-center"
           >
-            <div className="relative">
-              <svg viewBox="0 0 200 200" width="140" height="140" className="nova-avatar-breathe">
-                <defs>
-                  <radialGradient id="heroFaceGrad" cx="50%" cy="40%" r="50%">
-                    <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.15" />
-                    <stop offset="100%" stopColor="#00d4ff" stopOpacity="0.02" />
-                  </radialGradient>
-                  <filter id="heroGlow">
-                    <feGaussianBlur stdDeviation="3" result="blur" />
-                    <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-                  </filter>
-                </defs>
-                <circle cx="100" cy="100" r="80" fill="url(#heroFaceGrad)" stroke="#00d4ff" strokeWidth="2" strokeOpacity="0.4" filter="url(#heroGlow)" />
-                <circle cx="100" cy="100" r="65" fill="none" stroke="#00d4ff" strokeWidth="1" strokeOpacity="0.15" />
-                <g style={{ animation: "nova-blink 4s ease-in-out infinite" }}>
-                  <ellipse cx="75" cy="85" rx="6" ry="7" fill="#00d4ff" opacity="0.9" />
-                  <circle cx="77" cy="82" r="2" fill="white" opacity="0.6" />
-                </g>
-                <g style={{ animation: "nova-blink 4s ease-in-out infinite", animationDelay: "0.1s" }}>
-                  <ellipse cx="125" cy="85" rx="6" ry="7" fill="#00d4ff" opacity="0.9" />
-                  <circle cx="127" cy="82" r="2" fill="white" opacity="0.6" />
-                </g>
-                <path d="M 90 118 Q 100 126 110 118" fill="none" stroke="#00d4ff" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
-              </svg>
-              <div className="absolute inset-0 rounded-full nova-avatar-pulse" />
-            </div>
+            <SpriteNovaAvatar state="idle" emotion="gentle" size={140} glow label="Nova" />
           </motion.div>
 
           <motion.div

@@ -284,6 +284,37 @@
 ::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, 0.15); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0, 212, 255, 0.3); }
 
+/* ── Nova Expression Engine (emotion cues, halo, shimmer, particles) ── */
+@keyframes nova-halo-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+.nova-halo-breathe { animation: nova-halo-breathe 6s ease-in-out infinite; }
+
+@keyframes nova-blink-cycle {
+  0%, 94%, 100% { opacity: 1; }
+  95%, 97% { opacity: 0.15; }
+}
+.nova-blink-cycle { animation: nova-blink-cycle var(--nova-blink-ms, 3400ms) ease-in-out infinite; }
+
+@keyframes nova-recal-shimmer {
+  0% { background: linear-gradient(180deg, rgba(0,229,255,0) 0%, rgba(0,229,255,0) 100%); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% {
+    background: linear-gradient(180deg, rgba(0,229,255,0.35) 0%, rgba(0,229,255,0) 100%);
+    opacity: 0;
+  }
+}
+.nova-recal-shimmer { animation: nova-recal-shimmer 600ms ease-out forwards; }
+
+@keyframes nova-orbit {
+  0% { transform: rotate(0deg) translateX(var(--nova-orbit-r, 30px)) rotate(0deg); opacity: 0.7; }
+  10% { opacity: 0.9; }
+  90% { opacity: 0.9; }
+  100% { transform: rotate(360deg) translateX(var(--nova-orbit-r, 30px)) rotate(-360deg); opacity: 0.2; }
+}
+
 /* ── Code / Status Font ─────────────────────────────── */
 .font-mono {
   font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;

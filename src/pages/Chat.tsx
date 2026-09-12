@@ -7,6 +7,22 @@ import { type AvatarState } from "@/components/nova/avatar";
 import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
 import { JarvisOrb } from "@/components/nova/JarvisOrb";
 import { VOICE_STATE_TO_SPRITE, type NovaSpriteState } from "@/config/novaSprites";
+import {
+  EmotionHoldQueue,
+  circadianBaseline,
+  detectCorrection,
+  sentimentToEmotion,
+  type NovaEmotion,
+} from "@/services/nova/expression-engine";
+import {
+  recordTaskDebt,
+  addAssumptions,
+  rejectAssumption,
+  getAssumptions,
+  scheduleFutureLetter,
+  type AssumptionRecord,
+  WHISPER_NOTICE,
+} from "@/services/nova/labs";
 import { useOfflineSTT, type STTError } from "@/hooks/use-offline-stt";
 import { ttsRouter } from "@/services/tts/tts-router";
 import { useChat } from "@/hooks/use-chat";
@@ -14,6 +30,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { logActivity } from "@/lib/local-store";
+import { addMemory } from "@/lib/rtdb";
+import { permissionsService } from "@/services/permissions";
 import ReactMarkdown from "react-markdown";
 import { Collaboration } from "@/components/Collaboration";
 import { ExportChat } from "@/components/ExportChat";
@@ -51,6 +69,14 @@ export default function Chat() {
   // Ref mirrors the state so TTS callbacks never read a stale closure value.
   const [voiceModeActive, setVoiceModeActive] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voiceLanguage] = useState(() => {
+    try {
+      const configured = JSON.parse(localStorage.getItem("nova_voice_settings") || "{}").language;
+      return configured === "hi" ? "hi-IN" : configured === "mr" ? "mr-IN" : "en-US";
+    } catch {
+      return "en-US";
+    }
+  });
   const voiceModeActiveRef = useRef(false);
   const setVoiceMode = useCallback((active: boolean) => {
     voiceModeActiveRef.current = active;
@@ -162,6 +188,7 @@ export default function Chat() {
   const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({
     onTranscript: handleTranscript,
     onError: handleVoiceError,
+    lang: voiceLanguage,
     continuous: true,
   });
 
@@ -198,6 +225,52 @@ export default function Chat() {
   // Sprite follows the voice state via the centralized registry
   const spriteState: NovaSpriteState = VOICE_STATE_TO_SPRITE[voiceState] ?? "idle";
 
+  // ── Expression engine (hold-queue, halo, shimmer, celebrations) ──
+  const emotionQueueRef = useRef<EmotionHoldQueue | null>(null);
+  if (!emotionQueueRef.current) emotionQueueRef.current = new EmotionHoldQueue(circadianBaseline());
+  const emotionQueue = emotionQueueRef.current;
+
+  const [emotion, setEmotion] = useState<NovaEmotion>(() => circadianBaseline());
+  const [shimmerOn, setShimmerOn] = useState(false);
+
+  useEffect(() => {
+    const unsub = emotionQueue.subscribe((e) => setEmotion(e));
+    return () => {
+      unsub();
+      emotionQueue.dispose();
+    };
+  }, [emotionQueue]);
+
+  // Voice-state → performable emotion (curiosity tilt while listening, focus while generating)
+  useEffect(() => {
+    if (voiceState === "listening") emotionQueue.express("curiosity");
+    else if (voiceState === "speaking") emotionQueue.express("joy");
+  }, [voiceState, emotionQueue]);
+
+  // React to the latest user message: empathy halo, humble recalibration
+  const lastUserMsgRef = useRef<string>("");
+  const lastUserMessage = [...messages].reverse().find((m) => m.role === "user");
+  useEffect(() => {
+    if (!lastUserMessage || lastUserMessage.id === lastUserMsgRef.current) return;
+    lastUserMsgRef.current = String(lastUserMessage.id);
+    const text = typeof lastUserMessage.content === "string" ? lastUserMessage.content : "";
+    if (detectCorrection(text)) {
+      emotionQueue.express("humble");
+      setShimmerOn(true);
+      const t = setTimeout(() => setShimmerOn(false), 700);
+      return () => clearTimeout(t);
+    }
+    emotionQueue.express(sentimentToEmotion(text));
+  }, [lastUserMessage, emotionQueue]);
+
+  // Focused computation face while streaming (§5 thought particles via cue)
+  useEffect(() => {
+    if (isStreaming) emotionQueue.express("processing");
+    else if (!isSpeaking && !isListening && emotionQueue.currentEmotion === "processing") {
+      emotionQueue.express(circadianBaseline());
+    }
+  }, [isStreaming, isSpeaking, isListening, emotionQueue]);
+
   useEffect(() => {
     const state: AvatarState =
       voiceState === "error" ? "error"
@@ -208,16 +281,129 @@ export default function Chat() {
     setAvatarState(state);
   }, [voiceState]);
 
+  // ── Nova Labs: whisper mode + assumption ledger ──
+  const [whisperMode, setWhisperMode] = useState(false);
+  const [assumptionsByMessage, setAssumptionsByMessage] = useState<Record<string, AssumptionRecord[]>>({});
+
+  const toggleAssumption = (rec: AssumptionRecord) => {
+    if (rec.rejected) return;
+    rejectAssumption(rec.id);
+    setAssumptionsByMessage((prev) => ({
+      ...prev,
+      [rec.messageId]: (prev[rec.messageId] ?? []).map((a) =>
+        a.id === rec.id ? { ...a, rejected: true } : a
+      ),
+    }));
+    emotionQueue.express("humble");
+    setShimmerOn(true);
+    setTimeout(() => setShimmerOn(false), 700);
+  };
+
+  // Record assumption chips + time-debt for the latest assistant reply
+  const lastAssistantMsgRef = useRef<string>("");
+  const lastAssistantMessage = [...messages].reverse().find((m) => m.role === "assistant" && m.content);
+  useEffect(() => {
+    if (!lastAssistantMessage || whisperMode) return;
+    if (lastAssistantMessage.id === lastAssistantMsgRef.current) return;
+    lastAssistantMsgRef.current = lastAssistantMessage.id;
+    // Assumption chips from simple heuristic detection in the reply
+    const texts: string[] = [];
+    const am = /\bI(?:'m| am) (?:assuming|guessing) ([^.!?]*)/i.exec(lastAssistantMessage.content);
+    if (am) texts.push(`I assumed: ${am[1].trim()}`);
+    if (texts.length > 0) {
+      const recs = addAssumptions(lastAssistantMessage.id, texts);
+      setAssumptionsByMessage((prev) => ({ ...prev, [lastAssistantMessage.id]: recs }));
+    }
+    // Time-debt ledger: estimate manual cost for substantial replies
+    if (lastAssistantMessage.content.length > 400) {
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
+      recordTaskDebt(lastUser?.content ?? lastAssistantMessage.content);
+    }
+  }, [lastAssistantMessage, messages, whisperMode]);
+
+  // Time-debt for user tasks even without long replies
+  useEffect(() => {
+    if (whisperMode || !lastUserMessage) return;
+    if (lastUserMsgRef.current !== String(lastUserMessage.id)) return;
+    const text = typeof lastUserMessage.content === "string" ? lastUserMessage.content : "";
+    if (/\b(?:help me|research|summar|write|draft|plan|compare)\b/i.test(text) && text.length > 30) {
+      recordTaskDebt(text);
+    }
+  }, [lastUserMessage, whisperMode]);
+
   // Refresh mode when chat mounts
   useEffect(() => {
     setAiMode(getAIMode());
   }, []);
 
+  // Stop any in-flight speech when leaving the page so audio never bleeds
+  // across routes.
+  useEffect(() => {
+    return () => {
+      ttsRouter.stop();
+    };
+  }, []);
+
+  // "Remember that ..." → save to the Memory panel (requires memory_saving permission).
+  const REMEMBER_RE = /^(?:remember|note)\s+(?:that\s+)?(.+)$/i;
+
+  const trySaveMemory = useCallback(
+    async (text: string): Promise<boolean> => {
+      const match = REMEMBER_RE.exec(text.trim());
+      if (!match || !userId) return false;
+      if (!permissionsService.isGranted("memory_saving")) {
+        logActivity("memory", "Memory save blocked — grant Memory Saving in Settings → Security", "lock");
+        return false;
+      }
+      const content = match[1].trim();
+      if (!content) return false;
+      // Split "key: content" if present, else use the first few words as key.
+      const sepIdx = content.indexOf(":");
+      const key = sepIdx > 0 && sepIdx < 48 ? content.slice(0, sepIdx).trim() : content.split(/\s+/).slice(0, 5).join(" ");
+      const body = sepIdx > 0 && sepIdx < 48 ? content.slice(sepIdx + 1).trim() : content;
+      const isPerson = /\b(my (friend|wife|husband|mom|dad|sister|brother|colleague)|meets?|called)\b/i.test(content);
+      const isPref = /\b(i (like|love|prefer|hate|don't like)|i always|i never|my favorite)\b/i.test(content);
+      const category = isPref ? "preference" : isPerson ? "person" : "note";
+      try {
+        await addMemory(userId, { category, key, content: body || content });
+        logActivity("memory", `Saved memory: ${key}`, "brain");
+        return true;
+      } catch (err) {
+        console.warn("[MEMORY] Failed to save memory from chat:", err);
+        return false;
+      }
+    },
+    [userId]
+  );
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
-    logActivity("chat", `Sent: "${input.trim().slice(0, 40)}"`, "send");
-    sendMessage(input);
+    const text = input.trim();
+
+    // Vision trigger phrase — route to the Vision page.
+    if (/^see,?\s*this is me,?\s*this is what i have\b/i.test(text)) {
+      setInput("");
+      sendMessage(text);
+      navigate("/vision");
+      return;
+    }
+    if (whisperMode) {
+      // Zero retention: no activity log, no memory save, no conversation persistence
+      sendMessage(text);
+      setInput("");
+      setWhisperMode(false);
+      return;
+    }
+    // Future-Self Letters (Nova Labs §4): "mail my future self …" schedules a letter
+    const futureSelfMatch = /^mail my future self[:,]?\s*(.+)/i.exec(text);
+    if (futureSelfMatch && futureSelfMatch[1].trim()) {
+      scheduleFutureLetter(futureSelfMatch[1].trim(), Date.now() + 14 * 864e5);
+      logActivity("labs", "Scheduled a future-self letter (delivering in 2 weeks)", "mail");
+    }
+    logActivity("chat", `Sent: "${text.slice(0, 40)}"`, "send");
+    void trySaveMemory(text);
+    sendMessage(text);
     setInput("");
   };
 
@@ -283,7 +469,13 @@ export default function Chat() {
           >
             {showSidebar ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
-          <SpriteNovaAvatar state={spriteState} size={40} glow={false} />
+          <SpriteNovaAvatar
+            emotion={voiceState === "error" ? undefined : emotion}
+            state={voiceState === "error" ? "error" : spriteState}
+            size={40}
+            glow={false}
+            shimmer={shimmerOn}
+          />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-white">Nova Hybrid OS</h1>
@@ -452,7 +644,13 @@ export default function Chat() {
             <div className="relative flex items-center justify-center" style={{ width: 340, height: 340 }}>
               <JarvisOrb state={voiceState} size={170} />
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <SpriteNovaAvatar state={spriteState} size={72} glow={false} />
+                <SpriteNovaAvatar
+                  emotion={isStreaming ? "processing" : emotion}
+                  state={spriteState}
+                  size={72}
+                  glow={false}
+                  shimmer={shimmerOn}
+                />
               </div>
             </div>
             <h2 className="text-lg font-bold text-[#e0ecf5] mt-4">Nova Personal Operating System</h2>
@@ -582,6 +780,29 @@ export default function Chat() {
                     )}
                   </div>
                 )}
+                {/* Assumption Ledger chips (Nova Labs §2) */}
+                {msg.role === "assistant" && !msg.isStreaming && (assumptionsByMessage[msg.id]?.length ?? 0) > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {(assumptionsByMessage[msg.id] ?? []).map((a) => (
+                      <button
+                        key={a.id}
+                        onClick={() => toggleAssumption(a)}
+                        className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                          a.rejected
+                            ? "bg-[#fb7185]/15 border-[#fb7185]/30 text-[#fb7185] line-through"
+                            : "bg-[#a78bfa]/10 border-[#a78bfa]/30 text-[#c4b5fd] hover:bg-[#a78bfa]/20"
+                        }`}
+                        title={a.rejected ? "Corrected" : "Tap to correct this assumption"}
+                      >
+                        {a.rejected ? "✗ corrected · " : "🤔 "}{a.text}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Whisper zero-retention notice (Nova Labs §6) */}
+                {msg.content?.startsWith("👻") && (
+                  <p className="mt-2 text-[10px] font-mono text-[#6e6e8a] italic">{WHISPER_NOTICE}</p>
+                )}
               </Card>
             </motion.div>
           ))}
@@ -631,6 +852,17 @@ export default function Chat() {
               )}
             </Button>
           )}
+          {/* Whisper (zero-retention) toggle — Nova Labs §6 */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setWhisperMode((v) => !v)}
+            className={`shrink-0 ${whisperMode ? "text-[#a78bfa] bg-[#a78bfa]/10" : "text-[#6e6e8a]"}`}
+            title={whisperMode ? "Whisper mode ON — messages will not be saved" : "Whisper mode: send this message without saving it anywhere"}
+          >
+            👻
+          </Button>
           <textarea
             ref={inputRef}
             value={input}

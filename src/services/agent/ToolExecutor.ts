@@ -83,6 +83,12 @@ class ToolExecutorImpl {
     const permDecision = securityLayer.checkPermission(toolName, tool.category, context.missionId ? { missionId: context.missionId } : undefined);
     if (!permDecision.allowed) {
       const denyReason = "reason" in permDecision ? permDecision.reason : "Permission denied";
+      const match = /Nova permission required: ([a-z_]+)/.exec(denyReason);
+      if (match && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("nova:permission-request", {
+          detail: { permission: match[1], tool: toolName, message: denyReason },
+        }));
+      }
       securityLayer.audit("permission.deny", false, denyReason, {
         tool: toolName, risk: tool.riskLevel, source: options?.source || "system",
       });

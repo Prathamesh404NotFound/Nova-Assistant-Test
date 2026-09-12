@@ -16,6 +16,46 @@ import { detectEmotion, getEmotionPrefix, getEmotionGuidelines } from "@/service
 import { getGoalsContext, getUpcomingDeadlines } from "@/services/ai/goal-tracker";
 import { recordSuccess, recordFailure, getRecommendedRoute, autoRecover } from "@/services/ai/health-monitor";
 
+/**
+ * Detect whether an error is fatal (no key / auth) rather than transient.
+ * Fatal errors must surface to the user instead of being masked by canned replies.
+ */
+function isFatalGeminiError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("No Gemini API key") ||
+    msg.includes("INVALID_API_KEY") ||
+    msg.includes("API key not valid") ||
+    msg.includes("API_KEY_INVALID") ||
+    /error (401|403)/i.test(msg)
+  );
+}
+
+/**
+ * Bound an async operation with a timeout. Resolves `null` if it doesn't settle in time.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      }
+    );
+  });
+}
+
+/**
+ * Hard cap for local-AI responses. A stale cache marker or slow model load must
+ * never leave the chat bubble stuck on "..." forever — we fall back to Gemini.
+ */
+const LOCAL_ROUTE_TIMEOUT_MS = 12_000;
+
 export type AIRouterSource = "local" | "gemini";
 
 export interface AIRouterResponse {
@@ -100,9 +140,21 @@ export async function routeMessage(
       };
     }
     try {
-      await localAIService.ensureReady();
-      const result = await routeToLocal(input, conversationHistory, options);
-      return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
+      const localResult = await withTimeout(
+        (async () => {
+          await localAIService.ensureReady();
+          return routeToLocal(input, conversationHistory, options);
+        })(),
+        LOCAL_ROUTE_TIMEOUT_MS
+      );
+      if (localResult) {
+        return emotionPrefix ? { ...localResult, text: emotionPrefix + localResult.text } : localResult;
+      }
+      return {
+        text: "Local AI took too long to respond. Switch to Auto or Gemini mode in Settings.",
+        source: "local",
+        latencyMs: 0,
+      };
     } catch (err) {
       return {
         text: `Local AI couldn't start: ${err instanceof Error ? err.message : "Unknown error"}. Switch to Auto or Gemini mode.`,
@@ -121,11 +173,21 @@ export async function routeMessage(
   } else if (classification.decision === "local") {
     try {
       const avail = await localAIService.detect();
-      if (avail.supported) {
-        await localAIService.ensureReady();
-        const result = await routeToLocal(input, conversationHistory, options);
-        return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
+      if (avail.supported && avail.modelCached) {
+        const localResult = await withTimeout(
+          (async () => {
+            await localAIService.ensureReady();
+            return routeToLocal(input, conversationHistory, options);
+          })(),
+          LOCAL_ROUTE_TIMEOUT_MS
+        );
+        if (localResult) {
+          return emotionPrefix ? { ...localResult, text: emotionPrefix + localResult.text } : localResult;
+        }
+        // Timeout/failure — fall through to Gemini instead of leaving the user hanging.
       }
+      // Model not downloaded — don't block chat on a huge download.
+      // Gemini (even without a key, error shown) is faster than a silent hang.
     } catch {
       // Fall through to Gemini
     }
@@ -271,6 +333,7 @@ async function routeToGemini(
 
   let textResponse = "";
   let spokeText: string | null = null;
+  let streamedText = "";
 
   // Use cached system prompt if available, otherwise build enriched prompt
   let systemInstruction = getCachedSystemPrompt(input);
@@ -290,6 +353,7 @@ async function routeToGemini(
             systemInstruction,
             onChunk: (chunk) => {
               accumulated += chunk;
+              streamedText = accumulated;
               options.onChunk?.(accumulated);
             },
             onDone: () => resolve(),
@@ -309,7 +373,28 @@ async function routeToGemini(
       // Record failure for health monitoring
       recordFailure("gemini-api", err instanceof Error ? err.message : "unknown error");
 
-      // On Gemini failure, fall back to local conversation engine for basic response
+      // A mid-stream drop shouldn't erase content that already streamed to the UI.
+      if (streamedText && streamedText.trim().length > 0) {
+        return {
+          text: streamedText,
+          source: "gemini",
+          latencyMs: Math.round(performance.now() - startTime),
+          speakText: streamedText,
+        };
+      }
+
+      // Fatal errors (missing/invalid key) must surface — canned replies would
+      // make it look like Nova is ignoring the user.
+      if (isFatalGeminiError(err)) {
+        return {
+          text: `⚠️ ${err instanceof Error ? err.message : "Gemini is unavailable"}\n\nAdd your Gemini API key in Settings → API Keys (or as VITE_GEMINI_API_KEY), then try again.`,
+          source: "gemini",
+          latencyMs: Math.round(performance.now() - startTime),
+          speakText: "I need a Gemini API key to answer that. You can add one in Settings under API Keys.",
+        };
+      }
+
+      // On transient Gemini failure, fall back to local conversation engine
       const fallbackText = LocalConversationEngine.generateResponse(input);
       if (fallbackText && fallbackText.trim().length > 0) {
         textResponse = fallbackText;
@@ -327,10 +412,8 @@ async function routeToGemini(
       recordSuccess("gemini-api", Math.round(performance.now() - startTime));
     }
 
-    // Choose the text that should be spoken in voice mode.
-    // Prefer the final Gemini-like text, but use a speakable fallback if it looks like an error banner.
-    const isErrorBanner = textResponse.startsWith("Gemini is unavailable");
-    spokeText = isErrorBanner ? textResponse : textResponse;
+    // Voice mode speaks the final text verbatim.
+    spokeText = textResponse;
 
     const latencyMs = Math.round(performance.now() - startTime);
     return { text: textResponse, source: "gemini", latencyMs, speakText: spokeText };

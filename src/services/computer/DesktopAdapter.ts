@@ -61,6 +61,11 @@ function fail(method: string, error: string): ActionVerification {
 
 class WebDesktopAdapter implements DesktopAdapter {
   readonly platform = "web" as const;
+  private bridgeOnline = false;
+
+  setBridgeOnline(online: boolean): void {
+    this.bridgeOnline = online;
+  }
 
   private async sendAction(action: string, params: Record<string, unknown>): Promise<ActionVerification> {
     const result = await bridgeRequest<{ success: boolean; error?: string; evidence?: string }>(
@@ -172,9 +177,7 @@ class WebDesktopAdapter implements DesktopAdapter {
   }
 
   isAvailable(): boolean {
-    // In web context, always returns false for desktop features
-    // unless bridge is detected
-    return false;
+    return this.bridgeOnline || (typeof navigator !== "undefined" && typeof navigator.clipboard !== "undefined");
   }
 
   getCapabilities(): string[] {
@@ -188,10 +191,12 @@ class WebDesktopAdapter implements DesktopAdapter {
 
 // ─── Export ──────────────────────────────────────────────────────────────────
 
-export const desktopAdapter: DesktopAdapter = new WebDesktopAdapter();
+export const desktopAdapter = new WebDesktopAdapter();
 
 /** Check if the desktop bridge is reachable. */
 export async function checkDesktopBridge(): Promise<boolean> {
   const result = await bridgeRequest<{ status: string }>("/health");
-  return result?.status === "ok";
+  const online = result?.status === "ok";
+  desktopAdapter.setBridgeOnline(online);
+  return online;
 }

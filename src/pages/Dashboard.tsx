@@ -3,12 +3,15 @@ import { useNavigate } from "react-router";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { NovaAvatar, type AvatarState } from "@/components/nova/avatar";
+import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
+import { VOICE_STATE_TO_SPRITE } from "@/config/novaSprites";
+import type { AvatarState } from "@/components/nova/avatar";
 import { StatusIndicator } from "@/components/nova/status-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { useWakeWord } from "@/hooks/use-wake-word";
 import { useOfflineSTT } from "@/hooks/use-offline-stt";
 import { agentOrchestrator } from "@/services/agent/AgentOrchestrator";
+import { routeMessage } from "@/ai/AIRouter";
 import { ttsRouter } from "@/services/tts/tts-router";
 import { getAIMode } from "@/ai/local/LocalAISettings";
 import { DownloadModal } from "@/components/local-ai/DownloadModal";
@@ -16,6 +19,16 @@ import { localAIService } from "@/ai/local/LocalAIService";
 import { getTasks } from "@/lib/rtdb";
 import { getMemories } from "@/lib/rtdb";
 import { getConversations } from "@/lib/local-store";
+import {
+  getTimeDebtRollup,
+  getFrictionSuggestion,
+  dismissFrictionRule,
+  getDueLetters,
+  markLetterRead,
+  getAssumptions,
+  type FrictionSuggestion,
+  type FutureLetter,
+} from "@/services/nova/labs";
 import { logActivity } from "@/lib/local-store";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
 import {
@@ -90,8 +103,19 @@ export default function Dashboard() {
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [novaResponse, setNovaResponse] = useState("");
   const [isMuted, setIsMuted] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [geminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "");
   const [showLocalAIDownload, setShowLocalAIDownload] = useState(false);
+  // ── Nova Labs insights ──
+  const debtRollup = getTimeDebtRollup();
+  const [friction, setFriction] = useState<FrictionSuggestion | null>(null);
+  const [dueLetter, setDueLetter] = useState<FutureLetter | null>(null);
+  useEffect(() => {
+    setFriction(getFrictionSuggestion());
+    const letters = getDueLetters();
+    setDueLetter(letters[0] ?? null);
+    if (letters[0]) markLetterRead(letters[0].id);
+  }, []);
   const [localAIAvailable, setLocalAIAvailable] = useState<boolean | null>(null);
   const [localAICached, setLocalAICached] = useState(false);
   const [taskCount, setTaskCount] = useState(0);
@@ -127,6 +151,8 @@ export default function Dashboard() {
   }, []);
 
   // Voice handler: routes through AgentOrchestrator → TTS Router (not raw SpeechSynthesis)
+  // Conversational messages (no tool match) fall through to the full AI pipeline,
+  // so Nova always replies instead of going silent.
   const handleTranscript = useCallback(
     async (text: string, isFinal: boolean) => {
       if (!isFinal) { setAvatarState("listening"); return; }
@@ -134,32 +160,57 @@ export default function Dashboard() {
       setNovaResponse("");
       logActivity("voice", `Voice command: "${text.slice(0, 50)}"`, "mic");
       try {
+        let reply = "";
         const result = await agentOrchestrator.process({
           text,
           source: "voice" as const,
           context: { userId: user?.uid || "" },
         });
-        setNovaResponse(result.response);
+        reply = result.response;
+
+        // Empty response = orchestrator deferred to AI (conversational message).
+        // Route through the AI pipeline so Nova actually answers.
+        if (!reply || !reply.trim()) {
+          const ai = await routeMessage(text, [], geminiKey);
+          reply = ai.text;
+        }
+
+        // Last-resort guard: a voice turn must never end with silence.
+        if (!reply || !reply.trim()) {
+          reply = "I didn't catch that. Could you say it again?";
+        }
+
+        setNovaResponse(reply);
         setAvatarState("speaking");
-        if (!isMuted && result.response) {
-          ttsRouter.speak(result.response).catch(() => {
+        if (!isMuted && reply) {
+          ttsRouter.speak(reply).catch(() => {
             // TTS failed but text still shows — that's ok
           });
         }
         // Set avatar back to idle after TTS finishes or after a delay
         setTimeout(() => setAvatarState("idle"), isMuted ? 3000 : 8000);
-      } catch {
+      } catch (err) {
         setAvatarState("error");
-        setNovaResponse("I couldn't process that. Check your API key in Settings.");
+        setNovaResponse(
+          `I couldn't process that. ${err instanceof Error ? err.message : "Check your API key in Settings."}`
+        );
         setTimeout(() => setAvatarState("idle"), 3000);
       }
     },
     [geminiKey, isMuted, user?.uid]
   );
 
-  const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({ onTranscript: handleTranscript });
+  const handleVoiceError = useCallback((err: { message: string }) => {
+    setVoiceError(err.message);
+  }, []);
+
+  const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({
+    onTranscript: handleTranscript,
+    onError: handleVoiceError,
+  });
 
   const handleVoiceToggle = useCallback(() => {
+    setVoiceError(null);
     if (isListening) {
       stopSTT();
       ttsRouter.stop(); // Stop any playing TTS
@@ -245,7 +296,12 @@ export default function Dashboard() {
             <div className="jarvis-card p-8 jarvis-glow-cyan">
               <div className="flex flex-col items-center gap-4">
                 <div className="relative cursor-pointer" onClick={handleVoiceToggle}>
-                  <NovaAvatar state={avatarState} size={160} />
+                  <SpriteNovaAvatar
+                    state={VOICE_STATE_TO_SPRITE[avatarState] ?? "idle"}
+                    size={180}
+                    glow
+                    label={`Nova ${avatarState}`}
+                  />
                   {!isSupported && (
                     <p className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-xs text-[#f59e0b] whitespace-nowrap">
                       Voice not supported
@@ -263,6 +319,9 @@ export default function Dashboard() {
                 >
                   {isListening ? <><MicOff className="mr-2 h-4 w-4" />Stop Listening</> : <><Mic className="mr-2 h-4 w-4" />Talk to Nova</>}
                 </Button>
+                {voiceError && (
+                  <p className="text-xs text-[#f59e0b] max-w-md text-center">⚠️ {voiceError}</p>
+                )}
                 <button onClick={() => setIsMuted(!isMuted)} className="text-[#5a7a9a] hover:text-[#c8d6e5] transition-colors" aria-label={isMuted ? "Unmute voice output" : "Mute voice output"}>
                   {isMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
                 </button>
@@ -320,6 +379,56 @@ export default function Dashboard() {
             </div>
           </motion.div>
         </div>
+
+        {/* ── Nova Labs Insights ───────────────────────── */}
+        {(debtRollup.totalMinutes > 0 || friction || dueLetter || getAssumptions().some((a) => a.rejected)) && (
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3} className="col-span-12">
+            <div className="jarvis-card p-4">
+              <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Nova Labs Insights</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                  <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-1">Time Reclaimed</p>
+                  <p className="text-lg font-bold font-mono text-[#10b981]">
+                    {debtRollup.totalMinutes >= 60
+                      ? `${(debtRollup.totalMinutes / 60).toFixed(1)}h`
+                      : `${debtRollup.totalMinutes}m`}
+                  </p>
+                  <p className="text-[10px] text-[#5a7a9a]">
+                    {debtRollup.topCategories.length > 0
+                      ? `Top: ${debtRollup.topCategories[0].category}`
+                      : "Tasks Nova handled for you"}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                  <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-1">Friction Detected</p>
+                  {friction ? (
+                    <>
+                      <p className="text-xs text-[#c8d6e5] leading-snug">{friction.message}</p>
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => { dismissFrictionRule(friction.rule); setFriction(null); }}
+                          className="text-[10px] text-[#5a7a9a] hover:text-[#c8d6e5]"
+                        >Dismiss</button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[11px] text-[#5a7a9a]">Nothing friction-worthy detected yet.</p>
+                  )}
+                </div>
+                <div className="p-3 rounded-lg bg-[#0f2035]/50 border border-[#1a2f4a]/50">
+                  <p className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-1">From Your Past Self</p>
+                  {dueLetter ? (
+                    <p className="text-xs text-[#c8d6e5] leading-snug line-clamp-3">✉️ {dueLetter.body}</p>
+                  ) : (
+                    <p className="text-[11px] text-[#5a7a9a]">
+                      No letters due. Ask Nova in chat: “mail my future self …”
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
 
         {/* ── Second Row ───────────────────────────────── */}
         <div className="grid grid-cols-12 gap-4">

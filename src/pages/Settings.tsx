@@ -7,12 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { LocalAIPanel } from "@/components/local-ai/LocalAIPanel";
 import { GeminiHealthCheck } from "@/components/GeminiHealthCheck";
 import { ttsRouter, type VoiceSettings } from "@/services/tts/tts-router";
+import { permissionsService, REQUIRED_PERMISSIONS, type PermissionId } from "@/services/permissions";
 import { BARK_VOICE_PRESETS } from "@/services/tts/bark-voices";
 import { cn } from "@/lib/utils";
 import {
   Eye, EyeOff, Save, Shield, Key, Trash2, Cpu, Volume2, Mic2,
   Settings, Brain, Palette, Database, Wrench, ChevronRight,
-  Download, Upload, Activity, Globe, Lock, Zap,
+  Download, Upload, Activity, Globe, Lock, Zap, ShieldCheck, ShieldAlert,
 } from "lucide-react";
 
 interface ApiKeyConfig {
@@ -60,6 +61,38 @@ export default function SettingsPage() {
   const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(ttsRouter.getSettings());
   const [barkStatus, setBarkStatus] = useState(ttsRouter.isBarkAvailable() ? "ready" : "unavailable");
   const [devMode, setDevMode] = useState(() => localStorage.getItem("nova_dev_mode") === "true");
+  const [permissions, setPermissions] = useState(() => permissionsService.getAll());
+  const [permBusy, setPermBusy] = useState(false);
+
+  const refreshPermissions = useCallback(() => {
+    setPermissions(permissionsService.getAll());
+  }, []);
+
+  const togglePermission = useCallback(async (id: PermissionId, next: boolean) => {
+    setPermBusy(true);
+    try {
+      if (next) {
+        await permissionsService.grant(id);
+      } else {
+        permissionsService.revoke(id);
+      }
+    } finally {
+      setPermBusy(false);
+      refreshPermissions();
+    }
+  }, [refreshPermissions]);
+
+  const grantAllPermissions = useCallback(async () => {
+    setPermBusy(true);
+    try {
+      await permissionsService.grantAll();
+    } finally {
+      setPermBusy(false);
+      refreshPermissions();
+    }
+  }, [refreshPermissions]);
+
+  const grantedCount = permissions.filter((p) => p.granted).length;
 
   useEffect(() => {
     const loaded: Record<string, string> = {};
@@ -341,6 +374,65 @@ export default function SettingsPage() {
               <Lock className="h-4 w-4 text-[#00d4ff]" />
               <h2 className="text-sm font-semibold text-[#e8e8f8] uppercase tracking-wider">Security & Permissions</h2>
             </div>
+            {/* Permission Panel */}
+            <Card className="nova-glass p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-[#e8e8f8]">Required Permissions</p>
+                  <p className="text-xs text-[#5a7a9a] mt-0.5">
+                    {grantedCount}/{REQUIRED_PERMISSIONS.length} granted — Nova needs these for full functionality.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  disabled={permBusy}
+                  onClick={grantAllPermissions}
+                  className="bg-[#00d4ff] text-[#06060c] hover:bg-[#00d4ff]/90"
+                >
+                  {grantedCount === REQUIRED_PERMISSIONS.length ? (
+                    <><ShieldCheck className="h-4 w-4 mr-1" /> All Granted</>
+                  ) : (
+                    <><ShieldAlert className="h-4 w-4 mr-1" /> Grant All</>
+                  )}
+                </Button>
+              </div>
+              <div className="divide-y divide-[#1a2f4a]">
+                {permissions.map((perm) => (
+                  <div key={perm.id} className="flex items-start justify-between gap-4 py-3">
+                    <div className="min-w-0">
+                      <p className="text-sm text-[#c8d6e5]">{perm.label}</p>
+                      <p className="text-xs text-[#5a7a9a] mt-0.5">{perm.description}</p>
+                      {perm.browserPermission && !perm.granted && (
+                        <p className="text-[10px] text-[#f59e0b] mt-1">
+                          Granting will open your browser's permission prompt.
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      role="switch"
+                      aria-checked={perm.granted}
+                      aria-label={perm.label}
+                      disabled={permBusy}
+                      onClick={() => togglePermission(perm.id, !perm.granted)}
+                      className={cn(
+                        "w-10 h-6 rounded-full transition-colors relative shrink-0 mt-1",
+                        perm.granted ? "bg-[#10b981]" : "bg-[#252540]",
+                        permBusy && "opacity-50"
+                      )}
+                    >
+                      <span className={cn(
+                        "absolute top-1 w-4 h-4 rounded-full bg-white transition-transform",
+                        perm.granted ? "left-5" : "left-1"
+                      )} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[10px] text-[#5a7a9a] pt-1">
+                Permission state is stored locally on this device and synced with Nova's feature gates.
+              </p>
+            </Card>
+
             <Card className="nova-glass p-5 space-y-4">
               <div className="flex items-center justify-between py-2">
                 <div>
@@ -348,13 +440,6 @@ export default function SettingsPage() {
                   <p className="text-xs text-[#5a7a9a]">All data is stored locally in your browser</p>
                 </div>
                 <Badge className="text-[10px] bg-[#10b981]/15 text-[#10b981] border-0">Local</Badge>
-              </div>
-              <div className="flex items-center justify-between py-2 border-t border-[#1a2f4a]">
-                <div>
-                  <p className="text-sm text-[#c8d6e5]">Agent Permissions</p>
-                  <p className="text-xs text-[#5a7a9a]">Confirm before sending emails or external actions</p>
-                </div>
-                <Badge className="text-[10px] bg-[#00d4ff]/15 text-[#00d4ff] border-0">Enabled</Badge>
               </div>
               <div className="flex items-center justify-between py-2 border-t border-[#1a2f4a]">
                 <div>

@@ -186,29 +186,35 @@ export function CodingWorkspace() {
     setIsRunningTests(true);
     setActiveTab("tests");
     setTimeout(() => {
-      const results: TestResult[] = [
-        { name: "Header › renders", status: "passed", duration: 12 },
-        { name: "Sidebar › renders", status: "passed", duration: 8 },
-        { name: "Dashboard › renders", status: "passed", duration: 15 },
-        { name: "Settings › renders", status: Math.random() > 0.7 ? "failed" : "passed", duration: 11, error: Math.random() > 0.7 ? "Expected element to be visible" : undefined },
-      ];
+      const results: TestResult[] = flattenFiles(repo)
+        .filter(({ path, file }) => file.name.endsWith(".test.tsx") || file.name.endsWith(".test.ts"))
+        .map(({ path, file }) => ({
+          name: path,
+          status: file.content?.includes("expect(") ? "passed" : "failed",
+          duration: Math.max(1, (file.content?.length || 0) % 30),
+          error: file.content?.includes("expect(") ? undefined : "Test contains no expect assertion",
+        }));
       setTestResults(results);
       setIsRunningTests(false);
-    }, 1500);
-  }, []);
+    }, 250);
+  }, [repo]);
 
   const runLint = useCallback(() => {
     setIsLinting(true);
     setActiveTab("lint");
     setTimeout(() => {
-      setLintIssues([
-        { file: "src/components/Header.tsx", line: 3, column: 1, severity: "warning", message: "Unused import: React", rule: "no-unused-imports" },
-        { file: "src/components/Sidebar.tsx", line: 3, column: 1, severity: "info", message: "Consider adding accessibility attributes", rule: "jsx-a11y" },
-        { file: "src/main.tsx", line: 4, column: 1, severity: "error", message: "Missing type for document element", rule: "typescript" },
-      ]);
+      const issues: LintIssue[] = [];
+      for (const { path, file } of flattenFiles(repo)) {
+        const lines = (file.content || "").split("\n");
+        lines.forEach((line, index) => {
+          if (line.includes(": any")) issues.push({ file: path, line: index + 1, column: line.indexOf(": any") + 1, severity: "warning", message: "Avoid explicit any types", rule: "no-explicit-any" });
+          if (line.includes("console.log")) issues.push({ file: path, line: index + 1, column: line.indexOf("console.log") + 1, severity: "info", message: "Console output should be removed before production", rule: "no-console" });
+        });
+      }
+      setLintIssues(issues);
       setIsLinting(false);
-    }, 1000);
-  }, []);
+    }, 250);
+  }, [repo]);
 
   const handleCommit = useCallback(() => {
     setShowCommitConfirm(false);

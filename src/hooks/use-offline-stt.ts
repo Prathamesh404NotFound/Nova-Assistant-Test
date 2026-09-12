@@ -186,10 +186,15 @@ export function useOfflineSTT({
       recognition.start();
       recognitionRef.current = recognition;
       setTranscript("");
-    } catch {
-      // start() can throw InvalidStateError if already started — treat as benign.
+    } catch (err) {
+      // start() can throw if the engine is unavailable or the mic is busy.
+      // Report it so the UI explains why voice isn't starting instead of
+      // silently doing nothing.
       startingRef.current = false;
       recognitionRef.current = null;
+      shouldListenRef.current = false;
+      const message = err instanceof Error ? err.message : String(err);
+      emitError("audio-capture", `Couldn't start the microphone (${message}). Try again or check browser permissions.`);
     }
   }, [lang, emitError, getRecognition, clearRestartTimer]);
 

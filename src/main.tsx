@@ -5,13 +5,14 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { VlyToolbar } from "./vly-toolbar-readonly";
 import React, { Component, StrictMode, useEffect, lazy, Suspense } from "react";
 import { createRoot } from "react-dom/client";
-import { BrowserRouter, Route, Routes, useLocation, Navigate } from "react-router";
+import { BrowserRouter, Route, Routes, useLocation, useNavigate, Navigate } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { AIServiceProvider } from "@/contexts/AIServiceProvider";
 import { WakeWordProvider } from "@/contexts/WakeWordProvider";
 import { WakeWordActivator } from "@/components/WakeWordActivator";
+import { PermissionPrompt } from "@/components/PermissionPrompt";
 import "./index.css";
 
 // Lazy load all pages
@@ -24,6 +25,7 @@ const MemoryPage = lazy(() => import("./pages/Memory"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const AgentsPage = lazy(() => import("./pages/Agents"));
 const DevicesPage = lazy(() => import("./pages/Devices"));
+const VisionPage = lazy(() => import("./pages/Vision"));
 const CalendarPage = lazy(() => import("./pages/CalendarPage"));
 const EmailPage = lazy(() => import("./pages/EmailPage"));
 const MessagesPage = lazy(() => import("./pages/MessagesPage"));
@@ -100,9 +102,24 @@ class RootErrorBoundary extends Component<RootProps, RootState> {
 
 function RouteSyncer() {
   const location = useLocation();
+  const navigate = useNavigate();
   useEffect(() => {
     window.parent.postMessage({ type: "iframe-route-change", path: location.pathname }, "*");
   }, [location.pathname]);
+
+  // Bridge for the AI agent's navigation.go tool: tools can't call the router
+  // directly, so they dispatch a window event and we navigate here.
+  useEffect(() => {
+    function handleNovaNavigate(event: Event) {
+      const path = (event as CustomEvent<string>).detail;
+      if (typeof path === "string" && path.startsWith("/")) {
+        navigate(path);
+      }
+    }
+    window.addEventListener("nova:navigate", handleNovaNavigate);
+    return () => window.removeEventListener("nova:navigate", handleNovaNavigate);
+  }, [navigate]);
+
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
       if (event.data?.type === "navigate") {
@@ -142,6 +159,7 @@ createRoot(document.getElementById("root")!).render(
         <WakeWordProvider>
         <RouteSyncer />
         <WakeWordActivator />
+        <PermissionPrompt />
         <CommandPalette />
         <KeyboardShortcuts />
         <Suspense fallback={<RouteLoading />}>
@@ -158,6 +176,7 @@ createRoot(document.getElementById("root")!).render(
             <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
             <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
             <Route path="/devices" element={<ProtectedRoute><DevicesPage /></ProtectedRoute>} />
+            <Route path="/vision" element={<ProtectedRoute><VisionPage /></ProtectedRoute>} />
             <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
             <Route path="/email" element={<ProtectedRoute><EmailPage /></ProtectedRoute>} />
             <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />

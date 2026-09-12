@@ -33,6 +33,20 @@ export interface ChatMessage {
 
 export type ChatStatus = "idle" | "streaming" | "error";
 
+/**
+ * Generate a unique id. `crypto.randomUUID` is only available in secure
+ * contexts — fall back to a timestamp+random id so chat never fails outright
+ * in non-HTTPS previews or embedded webviews.
+ */
+function makeId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch { /* fall through */ }
+  return `id_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 interface UseChatOptions {
   apiKey?: string;
   userId?: string;
@@ -52,6 +66,10 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
   // Refs for abort control and preventing stale updates
   const abortRef = useRef(false);
   const activeRequestRef = useRef<string | null>(null);
+  // Message queued while a generation is in flight (e.g. a voice transcript
+  // spoken while Nova is still replying) — flushed as soon as we're free.
+  const pendingInputRef = useRef<string | null>(null);
+  const sendMessageRef = useRef<(content: string, force?: boolean) => void>(() => {});
 
   // Load conversations on mount
   useEffect(() => {
@@ -93,11 +111,19 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
    * Send a message and handle the AI response.
    */
   const sendMessage = useCallback(
-    async (content: string) => {
-      if (!content.trim() || isStreaming) return;
+    async (content: string, force = false) => {
+      const trimmed = content.trim();
+      if (!trimmed) return;
+
+      // While a generation is in flight, queue the message and send it as soon
+      // as the current one finishes instead of silently dropping it.
+      if (isStreaming && !force) {
+        pendingInputRef.current = trimmed;
+        return;
+      }
 
       // Generate unique request ID to prevent stale updates
-      const requestId = crypto.randomUUID();
+      const requestId = makeId();
       activeRequestRef.current = requestId;
 
       // Ensure we have an active conversation
@@ -111,7 +137,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
 
       // Add user message + assistant placeholder in a single batch to reduce re-renders
       const userMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: makeId(),
         role: "user",
         content: content.trim(),
         timestamp: Date.now(),
@@ -124,7 +150,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         timestamp: userMsg.timestamp,
       });
 
-      const assistantId = crypto.randomUUID();
+      const assistantId = makeId();
       const assistantPlaceholder: ChatMessage = {
         id: assistantId,
         role: "assistant",
@@ -305,8 +331,21 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         // Only clear streaming status if this request is still active
         if (activeRequestRef.current === requestId) {
           setStatus("idle");
+
+          // Flush a queued message (e.g. voice overlap) now that we're free.
+          const pending = pendingInputRef.current;
+          if (pending) {
+            pendingInputRef.current = null;
+            setTimeout(() => {
+              sendMessageRef.current(pending, true);
+            }, 0);
+          }
         }
-      }  }, [apiKey, userId, isStreaming, activeConvId, messages, onNavigate, onSpeak]);
+      }
+  }, [apiKey, userId, isStreaming, activeConvId, messages, onNavigate, onSpeak]);
+
+  // Keep the latest sendMessage available to the finally-flush without stale closures.
+  sendMessageRef.current = sendMessage;
 
   /**
    * Stop the current generation.
@@ -314,6 +353,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
   const stopGeneration = useCallback(() => {
     abortRef.current = true;
     activeRequestRef.current = null;
+    pendingInputRef.current = null;
     setStatus("idle");
 
     // Try to cancel local inference
@@ -339,6 +379,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
    * Clear all messages and start fresh.
    */
   const clearMessages = useCallback(() => {
+    pendingInputRef.current = null;
     setMessages([]);
     setError(null);
     setActiveConvId(null);
