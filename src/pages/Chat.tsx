@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { type AvatarState } from "@/components/nova/avatar";
 import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
+import { JarvisOrb } from "@/components/nova/JarvisOrb";
 import { VOICE_STATE_TO_SPRITE, type NovaSpriteState } from "@/config/novaSprites";
 import { useOfflineSTT, type STTError } from "@/hooks/use-offline-stt";
 import { ttsRouter } from "@/services/tts/tts-router";
@@ -448,7 +449,12 @@ export default function Chat() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4">
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto py-8">
-            <SpriteNovaAvatar state="idle" size={90} glow />
+            <div className="relative flex items-center justify-center" style={{ width: 340, height: 340 }}>
+              <JarvisOrb state={voiceState} size={170} />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <SpriteNovaAvatar state={spriteState} size={72} glow={false} />
+              </div>
+            </div>
             <h2 className="text-lg font-bold text-[#e0ecf5] mt-4">Nova Personal Operating System</h2>
               <p className="text-[#5a7a9a] mt-2 text-sm max-w-md">
                 {aiMode === "local"
