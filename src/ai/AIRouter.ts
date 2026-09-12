@@ -1,60 +1,24 @@
 /**
  * Nova AI Router
- * Central routing hub that decides between local Qwen3 and Gemini.
- * Integrates with the existing ResponseOrchestrator architecture.
+ * Coordinates routing between local Qwen3 and Gemini.
+ * Gemini HTTP details live in services/ai/gemini/GeminiClient.
+ * Memory/emotion/personality are best-effort context — failures never break chat.
  */
 
 import { localAIService, type ChatMessage as LocalChatMessage } from "./local/LocalAIService";
 import { getAIMode, type AIMode } from "./local/LocalAISettings";
-import { callGemini, streamGeminiResponse, classifyTask } from "@/lib/gemini";
-import { MemoryRetriever } from "@/services/memory/memory-retriever";
-import { unifiedMemory } from "@/services/memory/MemoryService";
+import {
+  geminiGenerate,
+  geminiStream,
+  resolveGeminiKey,
+  AIError,
+  type AITaskType,
+} from "@/services/ai/gemini/GeminiClient";
 import { LocalConversationEngine } from "@/services/ai/local-conversation";
 import { buildProactiveContext } from "@/services/ai/proactive-context";
-import { learnFromMessage, buildPersonalityPromptSuffix } from "@/services/ai/personality-engine";
-import { detectEmotion, getEmotionPrefix, getEmotionGuidelines } from "@/services/ai/emotion-engine";
+import { buildPersonalityPromptSuffix } from "@/services/ai/personality-engine";
 import { getGoalsContext, getUpcomingDeadlines } from "@/services/ai/goal-tracker";
 import { recordSuccess, recordFailure, getRecommendedRoute, autoRecover } from "@/services/ai/health-monitor";
-
-/**
- * Detect whether an error is fatal (no key / auth) rather than transient.
- * Fatal errors must surface to the user instead of being masked by canned replies.
- */
-function isFatalGeminiError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  return (
-    msg.includes("No Gemini API key") ||
-    msg.includes("INVALID_API_KEY") ||
-    msg.includes("API key not valid") ||
-    msg.includes("API_KEY_INVALID") ||
-    /error (401|403)/i.test(msg)
-  );
-}
-
-/**
- * Bound an async operation with a timeout. Resolves `null` if it doesn't settle in time.
- */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), ms);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      () => {
-        clearTimeout(timer);
-        resolve(null);
-      }
-    );
-  });
-}
-
-/**
- * Hard cap for local-AI responses. A stale cache marker or slow model load must
- * never leave the chat bubble stuck on "..." forever — we fall back to Gemini.
- */
-const LOCAL_ROUTE_TIMEOUT_MS = 12_000;
 
 export type AIRouterSource = "local" | "gemini";
 
@@ -62,6 +26,8 @@ export interface AIRouterResponse {
   text: string;
   source: AIRouterSource;
   latencyMs: number;
+  /** Structured error code when the response came from a fallback path. */
+  errorCode?: string;
   /** Optional explicit text to speak in voice mode. If omitted, `text` is used. */
   speakText?: string;
 }
@@ -71,18 +37,18 @@ export interface AIRouterCallbacks {
   onAcknowledgement?: (text: string) => void;
 }
 
+function devLog(...args: unknown[]): void {
+  if (import.meta.env.DEV) console.debug("[Nova Router]", ...args);
+}
+
 /**
  * Build a compact conversation history for the local model.
- * Keeps only recent turns to fit within context budget.
  */
 function buildLocalMessages(
   conversationHistory: Array<{ role: string; content: string }>,
   currentInput: string
 ): LocalChatMessage[] {
   const messages: LocalChatMessage[] = [];
-
-  // System prompt is built into LocalAIModel.buildPrompt, so we skip it here
-  // Take last 6 turns max to keep context compact for the 0.6B model
   const recentHistory = conversationHistory.slice(-6);
   for (const msg of recentHistory) {
     messages.push({
@@ -90,14 +56,200 @@ function buildLocalMessages(
       content: msg.content,
     });
   }
-
   messages.push({ role: "user", content: currentInput });
   return messages;
 }
 
 /**
- * Route a message to the appropriate backend.
+ * Map internal task classification to the GeminiClient task type.
+ * Only text-capable tasks are ever sent to Gemini chat.
  */
+function toGeminiTask(input: string): AITaskType {
+  const lower = input.toLowerCase();
+  const wordCount = input.split(/\s+/).length;
+  if (/\b(analyze|explain.?in.?detail|step.?by.?step|compare|essay|research|deep.?dive)\b/i.test(lower) || wordCount > 40) {
+    return "reasoning";
+  }
+  if (/\b(code|script|function|debug|refactor|typescript|python|javascript)\b/i.test(lower)) {
+    return "code";
+  }
+  return "chat";
+}
+
+// ── Context prompt (non-blocking, cached by state fingerprint) ─────────────
+
+const BASE_PROMPT =
+  "You are Nova, a voice-first AI personal operating system. You are helpful, intelligent, and friendly. Keep responses concise and conversational.\n\nIMPORTANT RULES:\n- When asked to create a task, calendar event, or send an email, only confirm success if the system actually executed it — do NOT fabricate results.\n- CRITICAL: Match the user's language. Hindi input → respond entirely in Hindi. English input → English. Mixed → dominant language.\n- Never prepend meta-commentary or emotion labels to your reply.";
+
+/**
+ * Build an enriched system prompt. Every sub-step is individually guarded:
+ * a failure in memory, personality, goals, or proactive context degrades
+ * gracefully to the base prompt instead of failing the request.
+ */
+async function buildEnrichedPrompt(userInput: string): Promise<string> {
+  let prompt = BASE_PROMPT;
+
+  // Memory — best effort, must never block chat
+  try {
+    const { unifiedMemory } = await import("@/services/memory/MemoryService");
+    await Promise.race([
+      unifiedMemory.initialize(),
+      new Promise((_, reject) => setTimeout(reject, 1500)),
+    ]);
+    const contextMemories = await unifiedMemory.recall({
+      currentMessage: userInput,
+      maxMemories: 6,
+    });
+    if (contextMemories.length > 0) {
+      prompt += `\n\nStored User Context (use to personalize responses):\n${unifiedMemory.formatForContext(contextMemories)}`;
+    }
+  } catch (err) {
+    devLog("memory context unavailable:", err instanceof Error ? err.message : err);
+  }
+
+  // Personality — decorative
+  try {
+    const suffix = buildPersonalityPromptSuffix();
+    if (suffix) prompt += suffix;
+  } catch { /* non-critical */ }
+
+  // Goals — decorative
+  try {
+    const goals = getGoalsContext();
+    if (goals) prompt += `\n\n${goals}`;
+    const deadlines = getUpcomingDeadlines(3);
+    if (deadlines.length > 0) {
+      prompt += `\n\nUpcoming Deadlines (mention if relevant):\n${deadlines
+        .map((g) => `- "${g.title}" (${g.priority} priority)`)
+        .join("\n")}`;
+    }
+  } catch { /* non-critical */ }
+
+  // Proactive context — decorative
+  try {
+    const proactiveCtx = await buildProactiveContext();
+    if (proactiveCtx) prompt += proactiveCtx;
+  } catch { /* non-critical */ }
+
+  return prompt;
+}
+
+/**
+ * Cache keyed by a state fingerprint (input + memory/session state), not raw
+ * input alone — prevents stale memory from leaking into unrelated requests.
+ * Small LRU with TTL avoids unbounded growth.
+ */
+const _promptCache = new Map<string, string>();
+const _promptCacheTs = new Map<string, number>();
+const PROMPT_CACHE_TTL = 30_000;
+const PROMPT_CACHE_MAX = 30;
+
+async function fingerprint(): Promise<string> {
+  try {
+    const { unifiedMemory } = await import("@/services/memory/MemoryService");
+    const anyMem = unifiedMemory as unknown as { getAllMemories?: () => unknown[] };
+    const count = typeof anyMem.getAllMemories === "function" ? anyMem.getAllMemories().length : 0;
+    return `${count}:${Math.floor(Date.now() / PROMPT_CACHE_TTL)}`;
+  } catch {
+    return "nomem";
+  }
+}
+
+async function getSystemPrompt(input: string): Promise<string> {
+  const fp = await fingerprint();
+  const cacheKey = `${input.slice(0, 120)}|${fp}`;
+  const cached = _promptCache.get(cacheKey);
+  if (cached && Date.now() - (_promptCacheTs.get(cacheKey) ?? 0) < PROMPT_CACHE_TTL) {
+    return cached;
+  }
+  const prompt = await buildEnrichedPrompt(input);
+  if (_promptCache.size >= PROMPT_CACHE_MAX) {
+    const oldest = _promptCacheTs.keys().next().value;
+    if (oldest) {
+      _promptCache.delete(oldest);
+      _promptCacheTs.delete(oldest);
+    }
+  }
+  _promptCache.set(cacheKey, prompt);
+  _promptCacheTs.set(cacheKey, Date.now());
+  return prompt;
+}
+
+// ── Local route ─────────────────────────────────────────────────────────────
+
+async function routeToLocal(
+  input: string,
+  conversationHistory: Array<{ role: string; content: string }>,
+  options?: AIRouterCallbacks
+): Promise<AIRouterResponse> {
+  const startTime = performance.now();
+  const localMessages = buildLocalMessages(conversationHistory, input);
+  const response = await localAIService.generate(
+    localMessages,
+    { maxNewTokens: 256, temperature: 0.7 },
+    { onToken: options?.onChunk, onDone: () => {}, onError: (err) => devLog("local error:", err.message) }
+  );
+  recordSuccess("local-ai", response.latencyMs);
+  return response;
+}
+
+// ── Gemini route ────────────────────────────────────────────────────────────
+
+async function routeToGemini(
+  input: string,
+  geminiKey: string,
+  options?: AIRouterCallbacks
+): Promise<AIRouterResponse> {
+  const startTime = performance.now();
+
+  options?.onAcknowledgement?.("Analyzing your request...");
+
+  const systemInstruction = await getSystemPrompt(input);
+  const task = toGeminiTask(input);
+  const contents = [{ role: "user", parts: [{ text: input }] }];
+
+  let textResponse = "";
+  let errorCode: string | undefined;
+
+  try {
+    if (options?.onChunk) {
+      let accumulated = "";
+      await geminiStream(
+        { apiKey: geminiKey, task, contents, systemInstruction },
+        (acc) => {
+          accumulated = acc;
+          options.onChunk?.(acc);
+        }
+      );
+      textResponse = accumulated;
+    } else {
+      textResponse = (await geminiGenerate({ apiKey: geminiKey, task, contents, systemInstruction })).text;
+    }
+
+    if (!textResponse.trim()) {
+      throw new AIError("UNKNOWN", "Gemini returned an empty response", { retryable: true });
+    }
+    recordSuccess("gemini-api", Math.round(performance.now() - startTime));
+  } catch (err) {
+    const aiErr = err instanceof AIError ? err : new AIError("UNKNOWN", String(err));
+    errorCode = aiErr.code;
+    recordFailure("gemini-api", `${aiErr.code}: ${aiErr.message}`);
+    devLog("gemini failed → local fallback:", aiErr.code, aiErr.message);
+
+    const fallback = LocalConversationEngine.generateResponse(input);
+    textResponse =
+      fallback ||
+      (aiErr.code === "NO_API_KEY"
+        ? "I need a Gemini API key for complex questions. Add one in Settings → API Keys, or switch to Local AI mode."
+        : "I'm having trouble reaching cloud AI right now. Your question may work in Local AI mode — try Settings → AI Mode.");
+  }
+
+  const latencyMs = Math.round(performance.now() - startTime);
+  return { text: textResponse, source: "gemini", latencyMs, errorCode, speakText: textResponse };
+}
+
+// ── Orchestrator ────────────────────────────────────────────────────────────
+
 export async function routeMessage(
   input: string,
   conversationHistory: Array<{ role: string; content: string }>,
@@ -109,24 +261,12 @@ export async function routeMessage(
   }
 ): Promise<AIRouterResponse> {
   const mode = options?.mode || getAIMode();
-
-  // Learn from user message for personality adaptation
-  learnFromMessage(input);
-
-  // Auto-recover any degraded components
   autoRecover();
-
-  // Check health-based routing recommendation
   const healthRoute = getRecommendedRoute();
-
-  // Detect emotion for response modulation
-  const emotion = detectEmotion(input);
-  const emotionPrefix = getEmotionPrefix(emotion);
 
   // MODE: Force Gemini
   if (mode === "gemini") {
-    const result = await routeToGemini(input, geminiKey, options);
-    return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
+    return routeToGemini(input, geminiKey, options);
   }
 
   // MODE: Force Local
@@ -137,284 +277,53 @@ export async function routeMessage(
         text: "Local AI is not available on this device. Switch to Auto or Gemini mode in Settings.",
         source: "local",
         latencyMs: 0,
+        errorCode: "LOCAL_UNAVAILABLE",
       };
     }
     try {
-      const localResult = await withTimeout(
-        (async () => {
-          await localAIService.ensureReady();
-          return routeToLocal(input, conversationHistory, options);
-        })(),
-        LOCAL_ROUTE_TIMEOUT_MS
-      );
-      if (localResult) {
-        return emotionPrefix ? { ...localResult, text: emotionPrefix + localResult.text } : localResult;
-      }
-      return {
-        text: "Local AI took too long to respond. Switch to Auto or Gemini mode in Settings.",
-        source: "local",
-        latencyMs: 0,
-      };
+      await localAIService.ensureReady();
+      return await routeToLocal(input, conversationHistory, options);
     } catch (err) {
-      return {
-        text: `Local AI couldn't start: ${err instanceof Error ? err.message : "Unknown error"}. Switch to Auto or Gemini mode.`,
-        source: "local",
-        latencyMs: 0,
-      };
+      devLog("local failed → gemini fallback:", err);
+      const geminiResult = await routeToGemini(input, geminiKey, options);
+      return { ...geminiResult, errorCode: geminiResult.errorCode ?? "LOCAL_FAILED_FALLBACK" };
     }
   }
 
-  // MODE: Auto (default) — classify and route
+  // MODE: Auto — classify then route, with cross-fallback both ways
   const classification = localAIService.classify(input);
 
-  // If health says local-only, skip classification
-  if (healthRoute === "gemini" && classification.decision === "local") {
-    // Health says use Gemini — override local preference
-  } else if (classification.decision === "local") {
+  const tryLocal = async (): Promise<AIRouterResponse | null> => {
+    if (healthRoute === "gemini") return null;
+    if (classification.decision !== "local") return null;
     try {
       const avail = await localAIService.detect();
-      if (avail.supported && avail.modelCached) {
-        const localResult = await withTimeout(
-          (async () => {
-            await localAIService.ensureReady();
-            return routeToLocal(input, conversationHistory, options);
-          })(),
-          LOCAL_ROUTE_TIMEOUT_MS
-        );
-        if (localResult) {
-          return emotionPrefix ? { ...localResult, text: emotionPrefix + localResult.text } : localResult;
-        }
-        // Timeout/failure — fall through to Gemini instead of leaving the user hanging.
-      }
-      // Model not downloaded — don't block chat on a huge download.
-      // Gemini (even without a key, error shown) is faster than a silent hang.
-    } catch {
-      // Fall through to Gemini
-    }
-  }
-
-  // Route to Gemini
-  const result = await routeToGemini(input, geminiKey, options);
-  return emotionPrefix ? { ...result, text: emotionPrefix + result.text } : result;
-}
-
-/**
- * Route to the local model.
- */
-async function routeToLocal(
-  input: string,
-  conversationHistory: Array<{ role: string; content: string }>,
-  options?: AIRouterCallbacks
-): Promise<AIRouterResponse> {
-  const localMessages = buildLocalMessages(conversationHistory, input);
-
-  const response = await localAIService.generate(
-    localMessages,
-    { maxNewTokens: 256, temperature: 0.7 },
-    {
-      onToken: options?.onChunk,
-      onDone: () => {},
-      onError: (err) => {
-        console.error("[Nova Local AI Error]", err);
-      },
-    }
-  );
-
-  return response;
-}
-
-/**
- * Route to Gemini (existing cloud path).
- */
-/**
- * Build a memory-aware system prompt for Gemini.
- * Retrieves relevant stored memories and injects them so Nova
- * can personalize responses and recall user preferences.
- */
-async function buildMemoryAwarePrompt(userInput: string): Promise<string> {
-  const BASE =
-    "You are Nova, a voice-first AI personal operating system. You are helpful, intelligent, and friendly. You help with daily tasks, answer questions, manage calendars, write emails, control smart home devices, and more. Keep responses concise and conversational.\n\nIMPORTANT RULES:\n- When the user asks you to remember something, confirm it was saved and do not pretend you can remember without the memory tool.\n- When asked to create a task, calendar event, or send an email, confirm the action was completed by the system — do NOT fabricate results.\n- Use the user's name and preferences when available.\n- Be direct: give the answer, then optionally ask if they want more detail.\n- CRITICAL: Match the user's language. If they write in Hindi (Devanagari script), respond entirely in Hindi. If they write in English, respond in English. If mixed, match their primary language.\n- Never reply in English when the user writes in Hindi or vice versa.\n- If the user corrects something, update your understanding and acknowledge the correction.";
-
-  try {
-    await unifiedMemory.initialize();
-    
-    // Use hybrid retrieval: context-aware recall for relevant memories + key preferences
-    const contextMemories = await unifiedMemory.recall({
-      currentMessage: userInput,
-      maxMemories: 6,
-    });
-    
-    if (contextMemories.length === 0) return BASE;
-    const memoryContext = unifiedMemory.formatForContext(contextMemories);
-    return `${BASE}\n\nStored User Context (use to personalize responses):\n${memoryContext}`;
-  } catch {
-    return BASE;
-  }
-}
-
-/**
- * Build an enriched system prompt with personality, emotion, goals, and proactive context.
- */
-async function buildEnrichedPrompt(userInput: string): Promise<string> {
-  // Start with memory-aware base
-  let prompt = await buildMemoryAwarePrompt(userInput);
-
-  // Add personality adaptation
-  const personalitySuffix = buildPersonalityPromptSuffix();
-  if (personalitySuffix) prompt += personalitySuffix;
-
-  // Add emotion-aware guidelines
-  const emotion = detectEmotion(userInput);
-  const emotionGuidelines = getEmotionGuidelines(emotion);
-  if (emotionGuidelines) prompt += emotionGuidelines;
-
-  // Add active goals context
-  const goalsContext = getGoalsContext();
-  if (goalsContext) prompt += `\n\n${goalsContext}`;
-
-  // Add upcoming deadlines as proactive nudge
-  const deadlines = getUpcomingDeadlines(3);
-  if (deadlines.length > 0) {
-    const deadlineLines = deadlines.map((g) =>
-      `- "${g.title}" is due soon (${g.priority} priority)`
-    );
-    prompt += `\n\nUpcoming Deadlines (mention if relevant):\n${deadlineLines.join("\n")}`;
-  }
-
-  // Add proactive context
-  try {
-    const proactiveCtx = await buildProactiveContext();
-    if (proactiveCtx) prompt += proactiveCtx;
-  } catch { /* non-critical */ }
-
-  return prompt;
-}
-
-// Cache system prompt per input to avoid rebuilding on retries/retries
-const _systemPromptCache = new Map<string, string>();
-const SYSTEM_PROMPT_CACHE_TTL = 30_000; // 30s TTL
-const _systemPromptTimestamps = new Map<string, number>();
-
-function getCachedSystemPrompt(input: string): string | null {
-  const cached = _systemPromptCache.get(input);
-  if (!cached) return null;
-  const ts = _systemPromptTimestamps.get(input) || 0;
-  if (Date.now() - ts > SYSTEM_PROMPT_CACHE_TTL) {
-    _systemPromptCache.delete(input);
-    _systemPromptTimestamps.delete(input);
-    return null;
-  }
-  return cached;
-}
-
-function setCachedSystemPrompt(input: string, prompt: string): void {
-  // Evict oldest if cache is large
-  if (_systemPromptCache.size > 50) {
-    const oldest = _systemPromptTimestamps.keys().next().value;
-    if (oldest) {
-      _systemPromptCache.delete(oldest);
-      _systemPromptTimestamps.delete(oldest);
-    }
-  }
-  _systemPromptCache.set(input, prompt);
-  _systemPromptTimestamps.set(input, Date.now());
-}
-
-async function routeToGemini(
-  input: string,
-  geminiKey: string,
-  options?: AIRouterCallbacks
-): Promise<AIRouterResponse> {
-  const startTime = performance.now();
-
-  if (options?.onAcknowledgement) {
-    options.onAcknowledgement("Analyzing your request...");
-  }
-
-  let textResponse = "";
-  let spokeText: string | null = null;
-  let streamedText = "";
-
-  // Use cached system prompt if available, otherwise build enriched prompt
-  let systemInstruction = getCachedSystemPrompt(input);
-  if (!systemInstruction) {
-    systemInstruction = await buildEnrichedPrompt(input);
-    setCachedSystemPrompt(input, systemInstruction);
-  }
-
-  try {
-      if (options?.onChunk) {
-        let accumulated = "";
-        await new Promise<void>((resolve, reject) => {
-          streamGeminiResponse({
-            messages: [{ role: "user", parts: [{ text: input }] }],
-            apiKey: geminiKey,
-            taskType: classifyTask(input),
-            systemInstruction,
-            onChunk: (chunk) => {
-              accumulated += chunk;
-              streamedText = accumulated;
-              options.onChunk?.(accumulated);
-            },
-            onDone: () => resolve(),
-            onError: (err) => reject(err),
-          });
-        });
-        textResponse = accumulated;
-      } else {
-        textResponse = await callGemini(geminiKey, input, systemInstruction, classifyTask(input));
-      }
-
-      // Treat purely whitespace/empty Gemini replies as a failure path
-      if (!textResponse || textResponse.trim().length === 0) {
-        throw new Error("Gemini returned an empty response");
-      }
+      if (!avail.supported) return null;
+      await localAIService.ensureReady();
+      return await routeToLocal(input, conversationHistory, options);
     } catch (err) {
-      // Record failure for health monitoring
-      recordFailure("gemini-api", err instanceof Error ? err.message : "unknown error");
-
-      // A mid-stream drop shouldn't erase content that already streamed to the UI.
-      if (streamedText && streamedText.trim().length > 0) {
-        return {
-          text: streamedText,
-          source: "gemini",
-          latencyMs: Math.round(performance.now() - startTime),
-          speakText: streamedText,
-        };
-      }
-
-      // Fatal errors (missing/invalid key) must surface — canned replies would
-      // make it look like Nova is ignoring the user.
-      if (isFatalGeminiError(err)) {
-        return {
-          text: `⚠️ ${err instanceof Error ? err.message : "Gemini is unavailable"}\n\nAdd your Gemini API key in Settings → API Keys (or as VITE_GEMINI_API_KEY), then try again.`,
-          source: "gemini",
-          latencyMs: Math.round(performance.now() - startTime),
-          speakText: "I need a Gemini API key to answer that. You can add one in Settings under API Keys.",
-        };
-      }
-
-      // On transient Gemini failure, fall back to local conversation engine
-      const fallbackText = LocalConversationEngine.generateResponse(input);
-      if (fallbackText && fallbackText.trim().length > 0) {
-        textResponse = fallbackText;
-      } else {
-        textResponse = `Gemini is unavailable right now (${err instanceof Error ? err.message : "offline"}). Try enabling Local AI in Settings.`;
-      }
+      devLog("local route failed, escalating:", err);
+      recordFailure("local-ai", err instanceof Error ? err.message : "unknown");
+      return null;
     }
+  };
 
-    // Normalize bad responses one more time for safety
-    if (!textResponse || textResponse.trim().length === 0) {
-      recordFailure("gemini-api", "empty response");
-      textResponse = LocalConversationEngine.generateResponse(input) || "I'm not sure how to respond to that. Can you try rephrasing?";
-    } else {
-      // Record success once we have real text
-      recordSuccess("gemini-api", Math.round(performance.now() - startTime));
-    }
+  if (classification.decision === "local") {
+    const localResult = await tryLocal();
+    if (localResult) return localResult;
+  }
 
-    // Voice mode speaks the final text verbatim.
-    spokeText = textResponse;
+  // No key configured and local didn't apply → deterministic local fallback
+  const hasKey = resolveGeminiKey(geminiKey).length > 0;
+  if (!hasKey) {
+    const fallback = LocalConversationEngine.generateResponse(input);
+    return {
+      text: fallback || "I need a Gemini API key for this. Add one in Settings → API Keys, or enable Local AI.",
+      source: "local",
+      latencyMs: 0,
+      errorCode: "NO_API_KEY",
+    };
+  }
 
-    const latencyMs = Math.round(performance.now() - startTime);
-    return { text: textResponse, source: "gemini", latencyMs, speakText: spokeText };
+  return routeToGemini(input, geminiKey, options);
 }

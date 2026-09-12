@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { type AvatarState } from "@/components/nova/avatar";
-import { SpriteNovaAvatar } from "@/components/nova/SpriteNovaAvatar";
 import { JarvisOrb } from "@/components/nova/JarvisOrb";
 import { VOICE_STATE_TO_SPRITE, type NovaSpriteState } from "@/config/novaSprites";
 import {
@@ -469,13 +468,6 @@ export default function Chat() {
           >
             {showSidebar ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
           </Button>
-          <SpriteNovaAvatar
-            emotion={voiceState === "error" ? undefined : emotion}
-            state={voiceState === "error" ? "error" : spriteState}
-            size={40}
-            glow={false}
-            shimmer={shimmerOn}
-          />
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm font-semibold text-white">Nova Hybrid OS</h1>
@@ -643,15 +635,6 @@ export default function Chat() {
             <div className="flex flex-col items-center justify-center h-full text-center max-w-lg mx-auto py-8">
             <div className="relative flex items-center justify-center" style={{ width: 340, height: 340 }}>
               <JarvisOrb state={voiceState} size={170} />
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <SpriteNovaAvatar
-                  emotion={isStreaming ? "processing" : emotion}
-                  state={spriteState}
-                  size={72}
-                  glow={false}
-                  shimmer={shimmerOn}
-                />
-              </div>
             </div>
             <h2 className="text-lg font-bold text-[#e0ecf5] mt-4">Nova Personal Operating System</h2>
               <p className="text-[#5a7a9a] mt-2 text-sm max-w-md">

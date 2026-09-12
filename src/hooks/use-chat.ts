@@ -260,7 +260,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         // Handle empty response with local fallback
         let finalText = response.text;
         if (!finalText || finalText.trim().length === 0) {
-          finalText = LocalConversationEngine.generateResponse(content.trim());
+          finalText = LocalConversationEngine.generateResponse(content.trim()) || "I couldn't generate a response. Please try rephrasing.";
         }
 
         // Update with final response
@@ -306,6 +306,7 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         if (activeRequestRef.current !== requestId) return;
 
         const errorMessage = err instanceof Error ? err.message : "Error processing request";
+        // Structured AI errors already carry user-friendly messages — show them as-is.
         setError(errorMessage);
         setStatus("error");
 

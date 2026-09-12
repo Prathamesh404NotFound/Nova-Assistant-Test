@@ -5,6 +5,16 @@
 
 export type Backend = "webgpu" | "wasm" | "unsupported";
 
+/** Real model lifecycle state — never inferred from a localStorage flag alone. */
+export type LocalModelState =
+  | "unknown"
+  | "downloading"
+  | "ready"
+  | "loading"
+  | "running"
+  | "failed"
+  | "unavailable";
+
 export type PerformanceTier = "fast" | "moderate" | "slow";
 
 export interface LocalAIAvailability {
@@ -71,7 +81,9 @@ export class LocalAIDetector {
   }
 
   /**
-   * Check if the model is already cached in browser storage.
+   * Check if the model marker exists in localStorage.
+   * NOTE: a marker alone is NOT proof the model files exist — callers must
+   * combine this with LocalAICache verification (see LocalAIService.isCached).
    */
   isModelCached(): boolean {
     try {

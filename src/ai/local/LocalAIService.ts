@@ -65,10 +65,14 @@ class LocalAIServiceImpl {
   ): Promise<void> {
     if (this.isDownloading) return;
     this.isDownloading = true;
+    this.lastDownloadFailed = false;
     try {
       await initializeModel();
       localAIDetector.markModelCached();
       onProgress?.({ loaded: 100, total: 100, percent: 100 });
+    } catch (err) {
+      this.lastDownloadFailed = true;
+      throw err;
     } finally {
       this.isDownloading = false;
     }
@@ -147,19 +151,44 @@ class LocalAIServiceImpl {
   }
 
   /**
-   * Check if the model is downloaded (cached).
+   * Check if the model is genuinely available: marker present AND the
+   * cache actually holds model data. Repairs stale markers when the
+   * cache is empty so the UI never shows a fake "cached" state.
    */
   async isCached(): Promise<boolean> {
-    return localAIDetector.isModelCached();
+    const marker = localAIDetector.isModelCached();
+    const cacheHasData = await localAICache.isModelCached();
+    if (marker && !cacheHasData) {
+      // Stale marker with missing files — invalidate and repair.
+      localAIDetector.clearModelCacheMarker();
+      return false;
+    }
+    return marker || cacheHasData;
   }
 
   /**
-   * Get model status as a human-readable string.
+   * Get the real model lifecycle state.
+   */
+  async getState(): Promise<import("./LocalAIDetector").LocalModelState> {
+    const avail = await this.detect();
+    if (!avail.supported && !isModelLoaded()) return "unavailable";
+    if (isModelLoaded()) return "running";
+    if (isModelLoading() || this.isDownloading) return this.isDownloading ? "downloading" : "loading";
+    if (this.lastDownloadFailed) return "failed";
+    if (await this.isCached()) return "ready";
+    return "unknown";
+  }
+
+  private lastDownloadFailed = false;
+
+  /**
+   * Get model status as a human-readable string (backwards compatible).
    */
   getStatus(): string {
     if (isModelLoading()) return "Loading";
     if (isModelLoaded()) return "Ready";
     if (this.isDownloading) return "Downloading";
+    if (this.lastDownloadFailed) return "Failed";
     return "Not installed";
   }
 }
