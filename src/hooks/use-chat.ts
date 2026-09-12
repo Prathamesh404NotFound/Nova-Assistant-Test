@@ -16,7 +16,7 @@ import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { IntentRouter } from "@/services/ai/intent-router";
 import { responseCache } from "@/services/ai/response-cache";
 import { LocalConversationEngine } from "@/services/ai/local-conversation";
-import { agentOrchestrator } from "@/services/agent/AgentOrchestrator";
+import { novaCore } from "@/services/nova-core/NovaCore";
 import { type Intent } from "@/services/ai/types";
 import {
   createConversation as cloudCreateConversation,
@@ -377,70 +377,57 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
       try {
         const mode = getAIMode();
 
-        // ── Agent Orchestrator: try local tool execution first ──
-        try {
-          const agentResult = await agentOrchestrator.process({
-            text: trimmed,
-            source: "chat",
-            context: { userId },
-          });
-
-          if (agentResult.response) {
-            setLastSource("local");
-            await finalizeAssistant(agentResult.response, "local", agentResult.durationMs);
-            return; // Agent path: displayed + persisted + spoken. Nothing skipped.
+        // ── Nova Core: single orchestration entry point ──
+        // Core classifies, runs deterministic tools, plans multi-step work,
+        // and generates the response — all with permission gating and honest
+        // verification. Streaming callbacks keep the UI progressive.
+        const coreResponse = await novaCore.handle(
+          {
+            id: requestId,
+            userId: userId || "anonymous",
+            input: trimmed,
+            source: "text",
+            timestamp: Date.now(),
+            conversationId: convId ?? undefined,
+            mode,
+            context: { conversationHistory },
+          },
+          {
+            onChunk: (chunk) => {
+              if (abortRef.current || activeRequestRef.current !== requestId) return;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: chunk, isStreaming: true } : m
+                )
+              );
+            },
+            onAcknowledgement: (ack) => {
+              if (abortRef.current || activeRequestRef.current !== requestId) return;
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId ? { ...m, content: ack, isStreaming: true } : m
+                )
+              );
+            },
           }
-          // Empty response = orchestrator deferred to AI — continue below
-        } catch {
-          // Orchestrator error — fall through to AI pipeline
-        }
-
-        // Check cache first (cached responses are shown, persisted, and spoken)
-        const cachedResponse = responseCache.get(trimmed, mode);
-        if (cachedResponse) {
-          setLastSource("local"); // cached — not a fresh Gemini call
-          await finalizeAssistant(cachedResponse, "local", 0);
-          return;
-        }
-
-        // Classify intent for routing
-        const intentResult = IntentRouter.classify(trimmed);
-
-        const response = await routeMessage(trimmed, conversationHistory, apiKey, {
-          mode,
-          onChunk: (chunk) => {
-            // Check if this request is still active
-            if (abortRef.current || activeRequestRef.current !== requestId) return;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: chunk, isStreaming: true } : m
-              )
-            );
-          },
-          onAcknowledgement: (ack) => {
-            if (abortRef.current || activeRequestRef.current !== requestId) return;
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === assistantId ? { ...m, content: ack, isStreaming: true } : m
-              )
-            );
-          },
-        });
+        );
 
         // Check if this request was aborted
         if (abortRef.current || activeRequestRef.current !== requestId) return;
 
         // Handle empty response with local fallback
-        let finalText = response.text;
+        let finalText = coreResponse.text;
         if (!finalText || finalText.trim().length === 0) {
           finalText = LocalConversationEngine.generateResponse(trimmed) || "I couldn't generate a response. Please try rephrasing.";
         }
 
-        setLastSource(response.source);
-        await finalizeAssistant(finalText, response.source, response.latencyMs);
+        setLastSource(coreResponse.source === "gemini" ? "gemini" : "local");
+        await finalizeAssistant(finalText, coreResponse.source === "gemini" ? "gemini" : "local", coreResponse.metadata?.latencyMs ?? 0);
 
-        // Cache the finalized response for future identical inputs
-        responseCache.set(trimmed, mode, finalText, response.source);
+        // Cache successful AI-generated responses (not tool/error paths)
+        if (coreResponse.status === "success") {
+          responseCache.set(trimmed, mode, finalText, coreResponse.source === "gemini" ? "gemini" : "local");
+        }
       } catch (err: unknown) {
         // Only update state if this request is still active
         if (activeRequestRef.current !== requestId) return;

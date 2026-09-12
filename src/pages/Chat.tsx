@@ -24,6 +24,8 @@ import {
 } from "@/services/nova/labs";
 import { useOfflineSTT, type STTError } from "@/hooks/use-offline-stt";
 import { ttsRouter } from "@/services/tts/tts-router";
+import { voiceSession } from "@/services/voice-core/VoiceSession";
+import { voiceOutput } from "@/services/voice-core/VoiceOutput";
 import { useChat } from "@/hooks/use-chat";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
@@ -100,8 +102,8 @@ export default function Chat() {
         setIsSpeaking(false);
         isSpeakingRef.current = false;
         // Auto-restart STT if voice mode is active — enables continuous conversation.
-        // Reads refs, never stale state captured at mount.
-        if (voiceModeActiveRef.current) {
+        // The unified voiceSession also drives its own loop; guard against double-start.
+        if (voiceModeActiveRef.current && !voiceSession.isActive()) {
           setTimeout(() => {
             if (voiceModeActiveRef.current && !isSpeakingRef.current) {
               if (import.meta.env.DEV) console.debug("[VOICE] TTS ended — restarting STT");
@@ -137,7 +139,7 @@ export default function Chat() {
   }, []);
 
   const stopTTS = useCallback(() => {
-    ttsRouter.stop();
+    voiceOutput.interrupt(); // unified interruption — also clears session queue
     setIsSpeaking(false);
     isSpeakingRef.current = false;
     setTtsError(null);
@@ -223,15 +225,16 @@ export default function Chat() {
     if (voiceModeActiveRef.current) {
       // Deactivate voice mode — stop mic and speech cleanly
       setVoiceMode(false);
-      stopSTT();
-      stopTTS();
+      voiceSession.stop(); // stops the unified session (mic + speech + timers)
       setVoiceError(null);
     } else {
       setVoiceError(null);
       setVoiceMode(true);
-      startSTT();
+      voiceSession.setUserId(userId ?? "anonymous");
+      voiceSession.configure({ lang: voiceLanguage, continuousConversation: true });
+      void voiceSession.start();
     }
-  }, [setVoiceMode, stopSTT, stopTTS, startSTT]);
+  }, [setVoiceMode, userId, voiceLanguage]);
 
   // Voice state machine: idle → listening → processing → speaking → (listening | error)
   type VoiceState = "idle" | "listening" | "processing" | "speaking" | "error";
