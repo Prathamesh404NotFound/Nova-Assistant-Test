@@ -220,10 +220,10 @@ export function CommandPalette() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="p-0 bg-[#0b1929] border-[#1a2f4a] max-w-lg">
+      <DialogContent className="p-0 bg-[#0b1626]/95 border-[#00d4ff]/20 max-w-lg jarvis-elevated backdrop-blur-xl">
         {/* Search input */}
-        <div className="flex items-center gap-2 px-4 py-3 border-b border-[#1a2f4a]">
-          <Search className="h-4 w-4 text-cyan-400" />
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-[#00d4ff]/10">
+          <Search className="h-4 w-4 text-[#00d4ff]" />
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -236,7 +236,7 @@ export function CommandPalette() {
               <X className="h-3.5 w-3.5" />
             </button>
           )}
-          <kbd className="text-[10px] text-slate-600 bg-[#0a1425] px-1.5 py-0.5 rounded border border-[#1a2f4a]">
+          <kbd className="text-[10px] text-[#5a7a9a] bg-[#0f2035] px-1.5 py-0.5 rounded border border-[#1a2f4a]">
             ESC
           </kbd>
         </div>
@@ -260,7 +260,7 @@ export function CommandPalette() {
                 <button
                   key={cmd.id}
                   onClick={() => handleSelect(cmd.path)}
-                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-slate-200 hover:bg-[#0f2137] transition-colors text-left"
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[#c8d6e5] hover:bg-[#00d4ff]/5 hover:text-[#00d4ff] transition-colors text-left"
                 >
                   <cmd.icon className="h-4 w-4 text-slate-500" />
                   <span>{cmd.label}</span>
@@ -281,7 +281,7 @@ export function CommandPalette() {
                   <button
                     key={result.id}
                     onClick={() => handleSelect(result.route)}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm hover:bg-[#0f2137] transition-colors text-left"
+                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm hover:bg-[#00d4ff]/5 transition-colors text-left"
                   >
                     <Icon className={`h-4 w-4 ${dataTypeColor(result.type)}`} />
                     <div className="flex-1 min-w-0">

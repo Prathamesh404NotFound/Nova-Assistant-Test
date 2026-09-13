@@ -1,11 +1,15 @@
 /**
  * Nova AI OS — Keyboard Shortcuts
  * Press ? to open a modal showing all available shortcuts.
+ * Also hosts the global voice shortcuts: Shift+Space toggles the voice
+ * session and ⌘/Ctrl+J barge-ins (interrupts Nova mid-speech).
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Keyboard } from "lucide-react";
+import { voiceSession } from "@/services/voice-core";
+import { voiceStateMachine } from "@/services/voice-core/VoiceStateMachine";
 
 interface Shortcut {
   keys: string[];
@@ -13,6 +17,8 @@ interface Shortcut {
 }
 
 const shortcuts: Shortcut[] = [
+  { keys: ["⇧", "Space"], description: "Toggle Voice Mode" },
+  { keys: ["⌘", "J"], description: "Interrupt Nova (barge-in)" },
   { keys: ["⌘", "K"], description: "Open Command Palette" },
   { keys: ["?"], description: "Show Keyboard Shortcuts" },
   { keys: ["⌘", "Enter"], description: "Send Message" },
@@ -24,9 +30,36 @@ const shortcuts: Shortcut[] = [
 
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false);
+  const togglingRef = useRef(false);
+
+  const toggleVoice = useCallback(async () => {
+    if (togglingRef.current) return; // prevent duplicate session starts
+    togglingRef.current = true;
+    try {
+      if (voiceSession.isActive()) {
+        voiceSession.stop();
+      } else {
+        await voiceSession.start();
+      }
+    } finally {
+      togglingRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Global voice shortcuts work even while typing (voice-first product).
+      if (e.shiftKey && e.code === "Space" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        void toggleVoice();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        if (voiceStateMachine.current === "speaking") voiceSession.bargeIn();
+        return;
+      }
+
       // Don't trigger if typing in input
       if (
         e.target instanceof HTMLInputElement ||
@@ -46,11 +79,11 @@ export function KeyboardShortcuts() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [toggleVoice]);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="p-0 bg-[#0d0d16] border-[#252540] max-w-sm">
+      <DialogContent className="p-0 bg-[#0b1626] border-[#00d4ff]/20 max-w-sm jarvis-elevated">
         <div className="flex items-center gap-2 px-4 py-3 border-b border-[#252540]">
           <Keyboard className="h-4 w-4 text-[#6e6e8a]" />
           <p className="text-sm font-medium text-[#e8e8f8]">Keyboard Shortcuts</p>

@@ -319,3 +319,97 @@
 .font-mono {
   font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace;
 }
+
+/* ── JARVIS Design System: ambience, HUD, focus, a11y ───────────── */
+
+/* Radial ambient light pool behind the command center. GPU-cheap:
+   static background layers, no animated gradients. */
+.jarvis-ambience {
+  background-image:
+    radial-gradient(1100px 500px at 70% -10%, rgba(0, 212, 255, 0.06), transparent 60%),
+    radial-gradient(900px 600px at 0% 100%, rgba(139, 92, 246, 0.05), transparent 55%),
+    radial-gradient(600px 300px at 100% 60%, rgba(14, 165, 233, 0.04), transparent 60%);
+}
+
+/* Thin technical accent line under headers/HUD rails. */
+.jarvis-rail-line {
+  background: linear-gradient(90deg,
+    rgba(0, 212, 255, 0.35),
+    rgba(0, 212, 255, 0.08) 40%,
+    transparent 80%);
+}
+
+/* Holographic panel: translucent surface, depth blur, hairline edge. */
+.jarvis-panel {
+  background: linear-gradient(160deg, rgba(13, 22, 38, 0.72), rgba(9, 16, 30, 0.85));
+  border: 1px solid rgba(0, 212, 255, 0.14);
+  backdrop-filter: blur(14px);
+  border-radius: 0.85rem;
+}
+
+/* Elevation for floating HUD elements above content. */
+.jarvis-elevated {
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 1px rgba(0, 212, 255, 0.06),
+    0 0 24px rgba(0, 212, 255, 0.05);
+}
+
+/* Current-phase indicator pulse (transform/opacity only). */
+@keyframes jarvis-phase-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.15); }
+}
+.nova-phase-dot {
+  animation: jarvis-phase-pulse 1.6s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+/* Voice state colors as utility hooks (kept subtle, HUD-grade contrast). */
+.nova-phase-listening { color: #00d4ff; }
+.nova-phase-processing { color: #a78bfa; }
+.nova-phase-speaking { color: #67e8f9; }
+.nova-phase-error { color: #f43f5e; }
+
+/* Focus visibility for keyboard navigation across the dark theme. */
+:where(a, button, [role="button"], input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid rgba(0, 212, 255, 0.7);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* High-contrast selection consistent with the cyan accent. */
+::selection {
+  background: rgba(0, 212, 255, 0.28);
+  color: #f0f9ff;
+}
+
+/* Reduced motion: disable all decorative loops; keep instant state changes. */
+@media (prefers-reduced-motion: reduce) {
+  .nova-phase-dot,
+  .nova-avatar-breathe,
+  .nova-avatar-pulse,
+  .nova-avatar-pulse-violet,
+  .nova-avatar-blink,
+  .nova-avatar-float,
+  .nova-spin-slow,
+  .nova-halo-breathe,
+  .nova-blink-cycle,
+  .nova-recal-shimmer,
+  .nova-gradient-text {
+    animation: none !important;
+  }
+  .nova-stagger > * {
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
