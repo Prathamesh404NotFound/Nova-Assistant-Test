@@ -148,7 +148,7 @@ export function ConfigStatus() {
           : "unavailable",
         icon: Cpu,
         description: localAIReady
-          ? "Qwen3-0.6B downloaded and ready offline"
+          ? "Qwen2.5-0.5B downloaded and ready offline"
           : "Download the model in Settings → Local AI",
       },
       {

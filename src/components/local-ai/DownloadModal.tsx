@@ -38,6 +38,7 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
   const [progress, setProgress] = useState<Progress>({ loaded: 0, total: 0, percent: 0 });
   const [error, setError] = useState<string | null>(null);
   const [availability, setAvailability] = useState<LocalAIAvailability | null>(null);
+  const [testState, setTestState] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -129,7 +130,7 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="flex items-center gap-2 text-[#e8e8f8]">
                       <Cpu className="h-3.5 w-3.5 text-[#00d4ff]" />
-                      <span>Qwen3 0.6B</span>
+                      <span>Qwen2.5 0.5B</span>
                     </div>
                     <div className="flex items-center gap-2 text-[#e8e8f8]">
                       <Download className="h-3.5 w-3.5 text-[#8b5cf6]" />
@@ -238,6 +239,22 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
                     Start Chatting
                   </Button>
                   <Button
+                    onClick={async () => {
+                      setTestState("running");
+                      try {
+                        const resp = await localAIService.generate("What is 2 + 2?", { maxNewTokens: 32, temperature: 0.3 });
+                        setTestState(resp.text.trim() ? `pass:${resp.text.slice(0, 60)}` : "fail:empty");
+                      } catch (err) {
+                        setTestState(`fail:${err instanceof Error ? err.message : "unknown"}`);
+                      }
+                    }}
+                    variant="outline"
+                    className="border-[#252540] text-[#6e6e8a] hover:text-[#00d4ff]"
+                    disabled={testState === "running"}
+                  >
+                    {testState === "running" ? "Testing…" : "Test local AI"}
+                  </Button>
+                  <Button
                     onClick={handleDelete}
                     variant="ghost"
                     className="text-[#6e6e8a] hover:text-[#f43f5e]"
@@ -245,6 +262,11 @@ export function DownloadModal({ open, onClose, onComplete }: DownloadModalProps)
                     Delete Model
                   </Button>
                 </div>
+                {testState && testState !== "running" && (
+                  <p className={`text-[10px] text-center ${testState.startsWith("pass") ? "text-[#10b981]" : "text-[#f43f5e]"}`}>
+                    {testState.startsWith("pass") ? `✓ ${testState.slice(5)}` : `✗ ${testState.slice(5)}`}
+                  </p>
+                )}
               </div>
             )}
 

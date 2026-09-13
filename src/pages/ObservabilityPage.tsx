@@ -68,7 +68,7 @@ function percentile(values: number[], p: number): number {
 // Seed some demo data if empty
 function seedDemoData(): ObsEntry[] {
   const now = Date.now();
-  const models = ["gemini-2.5-flash", "Qwen3-0.6B", "gemini-2.0-flash"];
+  const models = ["gemini-2.5-flash", "Qwen2.5-0.5B", "gemini-2.0-flash"];
   const actions = ["chat", "classify", "summarize", "translate", "analyze"];
   const entries: ObsEntry[] = [];
 

@@ -145,7 +145,11 @@ export function LocalAIPanel() {
             <div className="space-y-2 text-xs text-[#6e6e8a]">
               <div className="flex justify-between">
                 <span>Model</span>
-                <span className="text-[#e8e8f8]">Qwen3 0.6B</span>
+                <span className="text-[#e8e8f8]">Qwen2.5 0.5B Instruct</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Language</span>
+                <span className="text-[#e8e8f8]">Multilingual (en · hi · hinglish)</span>
               </div>
               <div className="flex justify-between">
                 <span>Runtime</span>

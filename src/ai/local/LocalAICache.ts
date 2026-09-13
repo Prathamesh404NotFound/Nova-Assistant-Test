@@ -1,113 +1,82 @@
 /**
- * Nova Local AI — Model Cache
- * Uses the browser Cache API to store the large model file.
- * Much better than localStorage for multi-hundred-MB artifacts.
+ * Nova Local AI — Model Cache Metadata
+ *
+ * The model weights themselves are cached by Transformers.js / the browser
+ * Cache API (under our configured cacheDir). This module stores only
+ * lightweight METADATA and provides cache-presence detection so the UI never
+ * shows a fake "cached" state and never duplicates the model on disk.
  */
 
-const CACHE_NAME = "nova-local-ai-model-v1";
-const MODEL_URL_PREFIX = "nova-local-model://";
+import { MODEL_CACHE_VERSION } from "./LocalModelConfig";
+
 const METADATA_KEY = "nova_local_model_meta";
 
 export interface ModelMetadata {
   modelId: string;
   version: string;
-  backend: string;
-  quantization: string;
   downloadedAt: number;
-  size: number;
 }
 
 export class LocalAICache {
   /**
-   * Check if the model is cached via Cache API.
+   * Detect whether the Transformers.js browser cache actually holds model
+   * assets. Checks Cache API entries belonging to our cacheDir.
    */
-  async isModelCached(): Promise<boolean> {
+  async hasTransformersCache(): Promise<boolean> {
     try {
-      const cache = await caches.open(CACHE_NAME);
-      const keys = await cache.keys();
-      return keys.some((req) => req.url.startsWith(MODEL_URL_PREFIX));
+      if (typeof caches === "undefined") return false;
+      const names = await caches.keys();
+      for (const name of names) {
+        if (!name.includes("nova-ai-cache") && !name.includes("transformers-cache")) continue;
+        const cache = await caches.open(name);
+        const keys = await cache.keys();
+        // Any cached model asset counts (onnx weights, tokenizer, config).
+        if (keys.some((req) => req.url.includes("Qwen2.5-0.5B") || req.url.includes("onnx"))) {
+          return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
   }
 
-  /**
-   * Get the cached model as a blob URL.
-   */
-  async getCachedModel(): Promise<string | null> {
+  /** Store lightweight download metadata (never the weights themselves). */
+  async storeMetadata(modelId: string): Promise<void> {
     try {
-      const cache = await caches.open(CACHE_NAME);
-      const keys = await cache.keys();
-      const modelReq = keys.find((req) => req.url.startsWith(MODEL_URL_PREFIX));
-      if (!modelReq) return null;
-      const response = await cache.match(modelReq);
-      if (!response) return null;
-      const blob = await response.blob();
-      return URL.createObjectURL(blob);
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Store a downloaded model blob in the cache.
-   */
-  async storeModel(blob: Blob, metadata: ModelMetadata): Promise<void> {
-    const cache = await caches.open(CACHE_NAME);
-    const url = `${MODEL_URL_PREFIX}${metadata.modelId}`;
-    const response = new Response(blob, {
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "Content-Length": String(blob.size),
-      },
-    });
-    await cache.put(new Request(url), response);
-    // Store metadata
-    try {
-      localStorage.setItem(METADATA_KEY, JSON.stringify(metadata));
+      const meta: ModelMetadata = {
+        modelId,
+        version: MODEL_CACHE_VERSION,
+        downloadedAt: Date.now(),
+      };
+      localStorage.setItem(METADATA_KEY, JSON.stringify(meta));
     } catch { /* ignore */ }
   }
 
-  /**
-   * Get stored model metadata.
-   */
   getMetadata(): ModelMetadata | null {
     try {
       const raw = localStorage.getItem(METADATA_KEY);
-      return raw ? JSON.parse(raw) : null;
+      return raw ? (JSON.parse(raw) as ModelMetadata) : null;
     } catch {
       return null;
     }
   }
 
-  /**
-   * Delete cached model from Cache API.
-   */
-  async deleteModel(): Promise<void> {
+  /** Metadata from a previous model version → stale. */
+  isMetadataCurrent(): boolean {
+    const meta = this.getMetadata();
+    return !!meta && meta.version === MODEL_CACHE_VERSION;
+  }
+
+  clearMetadata(): void {
     try {
-      await caches.delete(CACHE_NAME);
       localStorage.removeItem(METADATA_KEY);
     } catch { /* ignore */ }
   }
 
-  /**
-   * Get approximate cached model size in bytes.
-   */
-  async getCachedSize(): Promise<number> {
-    try {
-      const meta = this.getMetadata();
-      if (meta?.size) return meta.size;
-      const cache = await caches.open(CACHE_NAME);
-      const keys = await cache.keys();
-      const modelReq = keys.find((req) => req.url.startsWith(MODEL_URL_PREFIX));
-      if (!modelReq) return 0;
-      const response = await cache.match(modelReq);
-      if (!response) return 0;
-      const blob = await response.blob();
-      return blob.size;
-    } catch {
-      return 0;
-    }
+  /** Approximate storage requirement for the current model (bytes). */
+  getApproximateSize(): number {
+    return 380 * 1024 * 1024; // q4 quantized weights + tokenizer (~380 MB)
   }
 }
 

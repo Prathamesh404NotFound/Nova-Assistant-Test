@@ -1,19 +1,11 @@
 /**
  * Nova Local AI — Device Capability Detection
  * Detects WebGPU, WASM, storage, and estimates device performance.
+ * The localStorage marker is lightweight metadata only — never proof that
+ * the model is actually loadable (see LocalAIService.isCached + warm-up).
  */
 
 export type Backend = "webgpu" | "wasm" | "unsupported";
-
-/** Real model lifecycle state — never inferred from a localStorage flag alone. */
-export type LocalModelState =
-  | "unknown"
-  | "downloading"
-  | "ready"
-  | "loading"
-  | "running"
-  | "failed"
-  | "unavailable";
 
 export type PerformanceTier = "fast" | "moderate" | "slow";
 
@@ -28,11 +20,10 @@ export interface LocalAIAvailability {
 }
 
 const MODEL_VERSION_KEY = "nova_local_model_version";
-const MODEL_VERSION = "qwen3-0.6b-onnx-v1";
 
 export class LocalAIDetector {
   /**
-   * Check if WebGPU is available in this browser.
+   * Check if WebGPU is actually usable (adapter request succeeds).
    */
   static async checkWebGPU(): Promise<boolean> {
     try {
@@ -60,10 +51,9 @@ export class LocalAIDetector {
    */
   estimatePerformance(): PerformanceTier {
     const cores = navigator.hardwareConcurrency || 2;
-    const mem = (navigator as any).deviceMemory || 4; // GB
+    const mem = (navigator as { deviceMemory?: number }).deviceMemory || 4; // GB
     const hasWebGPU = !!navigator.gpu;
 
-    // Score based on available signals
     let score = 0;
     if (cores >= 8) score += 3;
     else if (cores >= 4) score += 2;
@@ -80,45 +70,38 @@ export class LocalAIDetector {
     return "slow";
   }
 
-  /**
-   * Check if the model marker exists in localStorage.
-   * NOTE: a marker alone is NOT proof the model files exist — callers must
-   * combine this with LocalAICache verification (see LocalAIService.isCached).
-   */
-  isModelCached(): boolean {
+  /** Check if the version marker matches the CURRENT model version. */
+  isModelCached(expectedVersion?: string): boolean {
     try {
       const version = localStorage.getItem(MODEL_VERSION_KEY);
-      return version === MODEL_VERSION;
+      if (!version) return false;
+      // A marker for a DIFFERENT (older) model version is stale — treat as
+      // not cached so the new model downloads; the old marker gets replaced
+      // on successful download.
+      return expectedVersion ? version === expectedVersion : true;
     } catch {
       return false;
     }
   }
 
-  /**
-   * Mark the model as cached after successful download.
-   */
-  markModelCached(): void {
+  /** Mark the current model version as cached after successful download. */
+  markModelCached(version: string): void {
     try {
-      localStorage.setItem(MODEL_VERSION_KEY, MODEL_VERSION);
+      localStorage.setItem(MODEL_VERSION_KEY, version);
     } catch { /* ignore */ }
   }
 
-  /**
-   * Clear the cached model marker.
-   */
+  /** Clear the cached model marker. */
   clearModelCacheMarker(): void {
     try {
       localStorage.removeItem(MODEL_VERSION_KEY);
     } catch { /* ignore */ }
   }
 
-  /**
-   * Full capability detection.
-   */
+  /** Full capability detection. */
   async detect(): Promise<LocalAIAvailability> {
     const webgpuAvailable = await LocalAIDetector.checkWebGPU();
     const wasmAvailable = this.checkWASM();
-    const modelCached = this.isModelCached();
     const estimatedPerformance = this.estimatePerformance();
 
     let backend: Backend = "unsupported";
@@ -129,23 +112,18 @@ export class LocalAIDetector {
       supported = true;
     } else if (wasmAvailable) {
       backend = "wasm";
-      // WASM is supported but may be slow on weak devices
-      supported = estimatedPerformance !== "slow" || modelCached;
+      supported = true;
     }
 
     let reason: string | undefined;
     if (!supported) {
-      if (!webgpuAvailable && !wasmAvailable) {
-        reason = "Neither WebGPU nor WebAssembly is available in this browser.";
-      } else if (estimatedPerformance === "slow" && !modelCached) {
-        reason = "This device may be too weak for local AI. Consider using Gemini mode.";
-      }
+      reason = "Neither WebGPU nor WebAssembly is available in this browser.";
     }
 
     return {
       supported,
       backend,
-      modelCached,
+      modelCached: false, // callers combine with isModelCached(version) + cache check
       estimatedPerformance,
       reason,
       webgpuAvailable,

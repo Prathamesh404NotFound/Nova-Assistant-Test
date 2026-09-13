@@ -1,6 +1,6 @@
 /**
  * Nova AI Router
- * Coordinates routing between local Qwen3 and Gemini.
+ * Coordinates routing between local Qwen2.5-0.5B and Gemini.
  * Gemini HTTP details live in services/ai/gemini/GeminiClient.
  * Memory/emotion/personality are best-effort context — failures never break chat.
  *
@@ -61,25 +61,6 @@ export interface AIRouterCallbacks {
 
 function devLog(...args: unknown[]): void {
   if (import.meta.env.DEV) console.debug("[Nova Router]", ...args);
-}
-
-/**
- * Build a compact conversation history for the local model.
- */
-function buildLocalMessages(
-  conversationHistory: Array<{ role: string; content: string }>,
-  currentInput: string
-): LocalChatMessage[] {
-  const messages: LocalChatMessage[] = [];
-  const recentHistory = conversationHistory.slice(-6);
-  for (const msg of recentHistory) {
-    messages.push({
-      role: msg.role as "user" | "assistant",
-      content: msg.content,
-    });
-  }
-  messages.push({ role: "user", content: currentInput });
-  return messages;
 }
 
 /**
@@ -236,11 +217,13 @@ async function routeToLocal(
   options?: AIRouterCallbacks
 ): Promise<AIRouterResponse> {
   const startTime = performance.now();
-  const localMessages = buildLocalMessages(conversationHistory, input);
+  // Input string + history → the service applies the Nova system prompt,
+  // chat template and sliding history window internally.
   const response = await localAIService.generate(
-    localMessages,
+    input,
     { maxNewTokens: 256, temperature: 0.7 },
-    { onToken: options?.onChunk, onDone: () => {}, onError: (err) => devLog("local error:", err.message) }
+    { onToken: options?.onChunk, onDone: () => {}, onError: (err) => devLog("local error:", err.message) },
+    conversationHistory
   );
   recordSuccess("local-ai", response.latencyMs);
   return {
@@ -248,7 +231,7 @@ async function routeToLocal(
     source: response.source,
     latencyMs: response.latencyMs,
     fallbackUsed: false,
-    model: "local-qwen",
+    model: "Qwen2.5-0.5B-Instruct",
   };
 }
 

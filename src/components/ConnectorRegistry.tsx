@@ -122,7 +122,7 @@ function useConnectors(): Connector[] {
     },
     {
       id: "local-ai",
-      name: "Qwen3 Local AI",
+      name: "Qwen2.5 Local AI",
       category: "ai",
       status: localAIReady
         ? "healthy"

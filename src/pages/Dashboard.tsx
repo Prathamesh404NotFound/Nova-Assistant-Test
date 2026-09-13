@@ -254,7 +254,7 @@ export default function Dashboard() {
               <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">AI Core Overview</h3>
               <div className="space-y-3">
                 {[
-                  { label: "AI Mode", value: getAIMode().charAt(0).toUpperCase() + getAIMode().slice(1), color: "#00d4ff", icon: Cpu },
+                  { label: "Local AI", value: localAICached ? "Qwen2.5 0.5B · Ready" : localAIAvailable === false ? "Unavailable" : "Qwen2.5 0.5B", color: localAICached ? "#10b981" : "#00d4ff", icon: Cpu },
                   { label: "Memory", value: `${memoryCount} Stored`, color: "#8b5cf6", icon: Brain },
                   { label: "Voice", value: isListening ? "Listening" : (voiceOutput.isBarkAvailable() ? "Bark Ready" : "Browser TTS"), color: "#00d4ff", icon: Mic },
                   { label: "Agents", value: `${agents.length} Available`, color: "#8b5cf6", icon: Bot },
