@@ -29,6 +29,8 @@ export interface NovaEventPayloads {
   "network.offline": Record<string, never>;
   "network.online": Record<string, never>;
   "automation.triggered": { automationId: string; input: string };
+  "agent.started": { agent: string; userId?: string };
+  "agent.completed": { agent: string };
   // Environment layer events
   "screen.changed": { hash: string };
   "app.opened": { application: string; bridge: boolean };

@@ -32,6 +32,9 @@ function nextRequestId(): string {
   return `nova-${Date.now().toString(36)}-${requestCounter.toString(36)}`;
 }
 
+/** Logical session id — one per page load, groups related requests. */
+const SESSION_ID = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
 /** Speech-friendly conversion of markdown-heavy responses. */
 export function toSpokenText(text: string): string {
   return text
@@ -84,7 +87,8 @@ class NovaCore {
     novaWorld.start();
 
     const requestId = request.id || nextRequestId();
-    this.trace("request", `${request.source}: "${request.input.slice(0, 60)}"`);
+    const sessionId = request.sessionId || SESSION_ID;
+    this.trace("request", `${sessionId}/${requestId} ${request.source}: "${request.input.slice(0, 60)}"`);
 
     novaEventBus.emit("ai.started", { requestId, taskClass: "pending" });
 
@@ -117,6 +121,7 @@ class NovaCore {
         this.trace("tools", `${toolActions.length} executed`);
         return this.buildResponse({
           requestId,
+          sessionId,
           text: toolResponseText,
           status: "success",
           source: "tools",
@@ -181,11 +186,11 @@ class NovaCore {
 
       const status: NovaResponse["status"] = aiResponse.errorCode
         ? "fallback"
-        : "success";
-      return this.buildResponse({
-        requestId,
-        text,
-        status,
+        : "success";      return this.buildResponse({
+          requestId,
+          sessionId,
+          text,
+          status,
         source: aiResponse.source === "gemini" ? "gemini" : "local",
         actions: toolActions,
         startedAt: started,
@@ -196,10 +201,10 @@ class NovaCore {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unexpected error";
       this.trace("error", message);
-      novaEventBus.emit("ai.failed", { requestId, errorCode: "UNKNOWN" });
-      return this.buildResponse({
-        requestId,
-        text: `I ran into a problem while processing that: ${message}`,
+      novaEventBus.emit("ai.failed", { requestId, errorCode: "UNKNOWN" });      return this.buildResponse({
+          requestId,
+          sessionId,
+          text: `I ran into a problem while processing that: ${message}`,
         status: "error",
         source: "system",
         actions: [],
@@ -245,6 +250,7 @@ class NovaCore {
 
   private buildResponse(opts: {
     requestId: string;
+    sessionId?: string;
     text: string;
     status: NovaResponse["status"];
     source: NovaResponse["source"];
@@ -274,6 +280,7 @@ class NovaCore {
         latencyMs,
         errorCode: opts.errorCode,
         model: novaWorld.getState().currentAIModel,
+        sessionId: opts.sessionId,
       },
     };
   }

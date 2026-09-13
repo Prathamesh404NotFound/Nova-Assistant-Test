@@ -23,9 +23,8 @@ import {
   WHISPER_NOTICE,
 } from "@/services/nova/labs";
 import { useOfflineSTT, type STTError } from "@/hooks/use-offline-stt";
-import { ttsRouter } from "@/services/tts/tts-router";
+import { voiceOutput } from "@/services/voice-core/VoiceOutput"; // canonical voice layer (ttsRouter stays internal)
 import { voiceSession } from "@/services/voice-core/VoiceSession";
-import { voiceOutput } from "@/services/voice-core/VoiceOutput";
 import { useChat } from "@/hooks/use-chat";
 import { useAuth } from "@/hooks/use-auth";
 import { useNavigate } from "react-router";
@@ -86,53 +85,25 @@ export default function Chat() {
     setVoiceModeActive(active);
   }, []);
 
-  // Initialize TTS router with callbacks
+  // Speaking/error state flows from the canonical VoiceOutput layer.
+  // Chat must NOT re-register ttsRouter callbacks — that clobbered the
+  // unified VoiceSession loop (its onEnd drove STT restart + barge-in).
   const [isSpeaking, setIsSpeaking] = useState(false);
   const isSpeakingRef = useRef(false);
 
   const startSTTRef = useRef<() => void>(() => {});
 
   useEffect(() => {
-    ttsRouter.setCallbacks({
-      onPlay: () => {
-        setIsSpeaking(true);
-        isSpeakingRef.current = true;
-      },
-      onEnd: () => {
-        setIsSpeaking(false);
-        isSpeakingRef.current = false;
-        // Auto-restart STT if voice mode is active — enables continuous conversation.
-        // The unified voiceSession also drives its own loop; guard against double-start.
-        if (voiceModeActiveRef.current && !voiceSession.isActive()) {
-          setTimeout(() => {
-            if (voiceModeActiveRef.current && !isSpeakingRef.current) {
-              if (import.meta.env.DEV) console.debug("[VOICE] TTS ended — restarting STT");
-              startSTTRef.current();
-            }
-          }, 300);
-        }
-      },
-      onError: (message) => {
-        // TTS failure must not break the response — show a clear voice error.
-        setTtsError(message);
-        setIsSpeaking(false);
-        isSpeakingRef.current = false;
-        // Voice loop: on TTS failure still return to listening if voice mode is active
-        if (voiceModeActiveRef.current) {
-          setTimeout(() => {
-            if (voiceModeActiveRef.current && !isSpeakingRef.current) {
-              startSTTRef.current();
-            }
-          }, 300);
-        }
-      },
+    return voiceOutput.subscribe(({ speaking, error }) => {
+      setIsSpeaking(speaking);
+      isSpeakingRef.current = speaking;
+      if (error) setTtsError(error);
     });
-    ttsRouter.initialize();
   }, []);
 
   const indicSpeak = useCallback(async (text: string) => {
     try {
-      await ttsRouter.speak(text);
+      await voiceOutput.speak(text);
     } catch (err) {
       console.warn("[TTS] Speak failed:", err);
     }
@@ -173,9 +144,9 @@ export default function Chat() {
     // Auto-speak is governed by voice settings, NOT by voice mode (STT).
     // Text-only chat still speaks when Auto Speak is enabled.
     onSpeak: (text) => {
-      const settings = ttsRouter.getSettings();
+      const settings = voiceOutput.getSettings();
       if (!settings.autoSpeak && !voiceModeActiveRef.current) return;
-      void ttsRouter.speak(text).catch((err) => {
+      void voiceOutput.speak(text).catch((err) => {
         console.warn("[TTS] Speak failed:", err);
       });
     },
@@ -366,7 +337,7 @@ export default function Chat() {
   // across routes.
   useEffect(() => {
     return () => {
-      ttsRouter.stop();
+      voiceOutput.interrupt();
     };
   }, []);
 
@@ -851,7 +822,7 @@ export default function Chat() {
               className="mx-auto mb-2 max-w-3xl w-full flex items-center justify-between p-2.5 rounded-lg bg-[#f97316]/10 border border-[#f97316]/25"
             >
               <p className="text-xs text-[#fdba74]">🔊 {ttsError} — response is still shown above.</p>
-              <Button variant="ghost" size="sm" className="text-[#fdba74] text-xs" onClick={() => { setTtsError(null); ttsRouter.clearError(); }}>
+              <Button variant="ghost" size="sm" className="text-[#fdba74] text-xs" onClick={() => { setTtsError(null); voiceOutput.clearError(); }}>
                 Dismiss
               </Button>
             </motion.div>

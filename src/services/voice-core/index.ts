@@ -2,6 +2,7 @@ export { voiceSession } from "./VoiceSession";
 export { voiceStateMachine } from "./VoiceStateMachine";
 export { voiceInput } from "./VoiceInput";
 export { voiceOutput } from "./VoiceOutput";
+export type { VoiceOutputCallbacks, VoiceOutputStateListener } from "./VoiceOutput";
 export { wakeWordDetector } from "./VoiceWakeWord";
 export { liveVoiceProvider } from "./LiveVoiceProvider";
 export { voiceDiagnostics } from "./VoiceDiagnostics";

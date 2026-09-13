@@ -19,6 +19,8 @@ export type NovaInputSource =
 export interface NovaRequest {
   id: string;
   userId: string;
+  /** Logical session (browser tab / voice session) grouping related requests. */
+  sessionId?: string;
   input: string;
   source: NovaInputSource;
   timestamp: number;
@@ -57,6 +59,7 @@ export interface NovaResponse {
   /** True when a side-effecting action awaits explicit user confirmation. */
   shouldAskConfirmation: boolean;
   metadata?: {
+    sessionId?: string;
     latencyMs?: number;
     errorCode?: string;
     model?: string;

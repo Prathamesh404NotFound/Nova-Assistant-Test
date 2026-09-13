@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { LocalAIPanel } from "@/components/local-ai/LocalAIPanel";
 import { GeminiHealthCheck } from "@/components/GeminiHealthCheck";
 import { ProactiveSettingsCard } from "@/components/settings/ProactiveSettingsCard";
-import { ttsRouter, type VoiceSettings } from "@/services/tts/tts-router";
+import { voiceOutput } from "@/services/voice-core/VoiceOutput"; // canonical voice layer
+import type { VoiceSettings } from "@/services/tts/tts-router"; // settings type only
 import { checkFirebaseHealth } from "@/services/data/NovaCloudDataService";
 import { useAuth } from "@/hooks/use-auth";
 import { permissionsService, REQUIRED_PERMISSIONS, type PermissionId } from "@/services/permissions";
@@ -62,9 +63,9 @@ export default function SettingsPage() {
   const [keys, setKeys] = useState<Record<string, string>>({});
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
   const [saved, setSaved] = useState(false);
-  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(ttsRouter.getSettings());
-  const [barkStatus, setBarkStatus] = useState(ttsRouter.isBarkAvailable() ? "ready" : "unavailable");
-  const [voiceTest, setVoiceTest] = useState<Awaited<ReturnType<typeof ttsRouter.testVoice>> | null>(null);
+  const [voiceSettings, setVoiceSettings] = useState<VoiceSettings>(voiceOutput.getSettings());
+  const [barkStatus, setBarkStatus] = useState(voiceOutput.isBarkAvailable() ? "ready" : "unavailable");
+  const [voiceTest, setVoiceTest] = useState<Awaited<ReturnType<typeof voiceOutput.testVoice>> | null>(null);
   const [firebaseHealth, setFirebaseHealth] = useState<Awaited<ReturnType<typeof checkFirebaseHealth>> | null>(null);
   const [firebaseChecking, setFirebaseChecking] = useState(false);
   const [devMode, setDevMode] = useState(() => localStorage.getItem("nova_dev_mode") === "true");
@@ -336,7 +337,7 @@ export default function SettingsPage() {
                   {(["bark", "browser"] as const).map((engine) => (
                     <button
                       key={engine}
-                      onClick={() => { const updated = { ...voiceSettings, engine }; setVoiceSettings(updated); ttsRouter.updateSettings(updated); }}
+                      onClick={() => { const updated = { ...voiceSettings, engine }; setVoiceSettings(updated); voiceOutput.updateSettings(updated); }}
                       className={cn(
                         "flex-1 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors",
                         voiceSettings.engine === engine
@@ -355,7 +356,7 @@ export default function SettingsPage() {
                 <label className="text-xs text-[#6e6e8a] mb-2 block">Voice Preset</label>
                 <select
                   value={voiceSettings.voicePreset}
-                  onChange={(e) => { const updated = { ...voiceSettings, voicePreset: e.target.value }; setVoiceSettings(updated); ttsRouter.updateSettings(updated); }}
+                  onChange={(e) => { const updated = { ...voiceSettings, voicePreset: e.target.value }; setVoiceSettings(updated); voiceOutput.updateSettings(updated); }}
                   className="w-full bg-[#16162a] border border-[#252540] text-[#e8e8f8] text-xs rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#00d4ff]/40"
                 >
                   {BARK_VOICE_PRESETS.map((preset) => (
@@ -373,7 +374,7 @@ export default function SettingsPage() {
                 <input
                   type="range" min="0" max="100"
                   value={Math.round(voiceSettings.volume * 100)}
-                  onChange={(e) => { const vol = parseInt(e.target.value) / 100; const updated = { ...voiceSettings, volume: vol }; setVoiceSettings(updated); ttsRouter.setVolume(vol); }}
+                  onChange={(e) => { const vol = parseInt(e.target.value) / 100; const updated = { ...voiceSettings, volume: vol }; setVoiceSettings(updated); voiceOutput.setVolume(vol); }}
                   className="w-full accent-[#00d4ff] h-1.5"
                 />
               </div>
@@ -387,7 +388,7 @@ export default function SettingsPage() {
                 <input
                   type="range" min="50" max="200"
                   value={Math.round(voiceSettings.speed * 100)}
-                  onChange={(e) => { const speed = parseInt(e.target.value) / 100; const updated = { ...voiceSettings, speed }; setVoiceSettings(updated); ttsRouter.updateSettings(updated); }}
+                  onChange={(e) => { const speed = parseInt(e.target.value) / 100; const updated = { ...voiceSettings, speed }; setVoiceSettings(updated); voiceOutput.updateSettings(updated); }}
                   className="w-full accent-[#00d4ff] h-1.5"
                 />
               </div>
@@ -396,13 +397,13 @@ export default function SettingsPage() {
               <div className="flex flex-wrap gap-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={voiceSettings.autoSpeak}
-                    onChange={(e) => { const updated = { ...voiceSettings, autoSpeak: e.target.checked }; setVoiceSettings(updated); ttsRouter.updateSettings(updated); }}
+                    onChange={(e) => { const updated = { ...voiceSettings, autoSpeak: e.target.checked }; setVoiceSettings(updated); voiceOutput.updateSettings(updated); }}
                     className="accent-[#00d4ff] rounded" />
                   <span className="text-xs text-[#6e6e8a]">Auto-speak responses</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={voiceSettings.interruptOnNewInput}
-                    onChange={(e) => { const updated = { ...voiceSettings, interruptOnNewInput: e.target.checked }; setVoiceSettings(updated); ttsRouter.updateSettings(updated); }}
+                    onChange={(e) => { const updated = { ...voiceSettings, interruptOnNewInput: e.target.checked }; setVoiceSettings(updated); voiceOutput.updateSettings(updated); }}
                     className="accent-[#00d4ff] rounded" />
                   <span className="text-xs text-[#6e6e8a]">Interrupt on new input</span>
                 </label>
@@ -411,7 +412,7 @@ export default function SettingsPage() {
               {/* Test — exercises the exact production speech path */}
               <Button variant="ghost" size="sm" className="w-full text-[#00d4ff] hover:bg-[#00d4ff]/10"
                 onClick={async () => {
-                  const result = await ttsRouter.testVoice();
+                  const result = await voiceOutput.testVoice();
                   setVoiceTest(result);
                 }}>
                 <Mic2 className="h-3.5 w-3.5 mr-2" /> Test Nova Voice
@@ -565,7 +566,7 @@ export default function SettingsPage() {
                     <p className="text-sm text-[#c8d6e5]">TTS Diagnostics</p>
                     <p className="text-xs text-[#5a7a9a]">View Bark service status and generation metrics</p>
                   </div>
-                  <Button variant="ghost" size="sm" className="text-[#00d4ff]" onClick={() => console.log(ttsRouter.getDiagnostics())}>
+                  <Button variant="ghost" size="sm" className="text-[#00d4ff]" onClick={() => console.log(voiceOutput.getDiagnostics())}>
                     <Activity className="h-4 w-4 mr-1" /> Debug
                   </Button>
                 </div>

@@ -9,10 +9,10 @@ import type { AvatarState } from "@/components/nova/avatar";
 import { StatusIndicator } from "@/components/nova/status-indicator";
 import { useAuth } from "@/hooks/use-auth";
 import { useWakeWord } from "@/hooks/use-wake-word";
-import { useOfflineSTT } from "@/hooks/use-offline-stt";
-import { agentOrchestrator } from "@/services/agent/AgentOrchestrator";
-import { routeMessage } from "@/ai/AIRouter";
-import { ttsRouter } from "@/services/tts/tts-router";
+import { voiceSession } from "@/services/voice-core/VoiceSession";
+import { voiceOutput } from "@/services/voice-core/VoiceOutput";
+import { voiceStateMachine } from "@/services/voice-core/VoiceStateMachine";
+import { novaEventBus } from "@/services/nova-core/NovaEventBus";
 import { getAIMode } from "@/ai/local/LocalAISettings";
 import { DownloadModal } from "@/components/local-ai/DownloadModal";
 import { localAIService } from "@/ai/local/LocalAIService";
@@ -103,9 +103,9 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const [avatarState, setAvatarState] = useState<AvatarState>("idle");
   const [novaResponse, setNovaResponse] = useState("");
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(voiceOutput.isMuted());
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [geminiKey] = useState(() => (import.meta.env.VITE_GEMINI_API_KEY as string) || localStorage.getItem("nova_gemini_key") || "");
+  const [sessionActive, setSessionActive] = useState(false);
   const [showLocalAIDownload, setShowLocalAIDownload] = useState(false);
   // ── Nova Labs insights ──
   const debtRollup = getTimeDebtRollup();
@@ -151,78 +151,53 @@ export default function Dashboard() {
     localAIService.isCached().then(setLocalAICached);
   }, []);
 
-  // Voice handler: routes through AgentOrchestrator → TTS Router (not raw SpeechSynthesis)
-  // Conversational messages (no tool match) fall through to the full AI pipeline,
-  // so Nova always replies instead of going silent.
-  const handleTranscript = useCallback(
-    async (text: string, isFinal: boolean) => {
-      if (!isFinal) { setAvatarState("listening"); return; }
-      setAvatarState("thinking");
-      setNovaResponse("");
-      logActivity("voice", `Voice command: "${text.slice(0, 50)}"`, "mic");
-      try {
-        let reply = "";
-        const result = await agentOrchestrator.process({
-          text,
-          source: "voice" as const,
-          context: { userId: user?.uid || "" },
-        });
-        reply = result.response;
-
-        // Empty response = orchestrator deferred to AI (conversational message).
-        // Route through the AI pipeline so Nova actually answers.
-        if (!reply || !reply.trim()) {
-          const ai = await routeMessage(text, [], geminiKey);
-          reply = ai.text;
-        }
-
-        // Last-resort guard: a voice turn must never end with silence.
-        if (!reply || !reply.trim()) {
-          reply = "I didn't catch that. Could you say it again?";
-        }
-
-        setNovaResponse(reply);
-        setAvatarState("speaking");
-        if (!isMuted && reply) {
-          ttsRouter.speak(reply).catch(() => {
-            // TTS failed but text still shows — that's ok
-          });
-        }
-        // Set avatar back to idle after TTS finishes or after a delay
-        setTimeout(() => setAvatarState("idle"), isMuted ? 3000 : 8000);
-      } catch (err) {
-        setAvatarState("error");
-        setNovaResponse(
-          `I couldn't process that. ${err instanceof Error ? err.message : "Check your API key in Settings."}`
-        );
-        setTimeout(() => setAvatarState("idle"), 3000);
-      }
-    },
-    [geminiKey, isMuted, user?.uid]
-  );
-
-  const handleVoiceError = useCallback((err: { message: string }) => {
-    setVoiceError(err.message);
+  // ── Voice via the canonical VoiceSession + NovaCore pipeline ──────────────
+  // Same brain, memory, tools, world state and TTS as Chat. The Dashboard
+  // never touches AgentOrchestrator, AIRouter or the legacy TTS router.
+  useEffect(() => {
+    const offSession = voiceSession.subscribe((status) => {
+      setSessionActive(status.state !== "sleeping");
+      if (status.state === "listening") setAvatarState("listening");
+      else if (status.state === "processing") setAvatarState("thinking");
+      else if (status.state === "speaking") setAvatarState("speaking");
+      else if (status.state === "error") setAvatarState("error");
+      else if (status.state === "sleeping") setAvatarState("idle");
+    });
+    const offOutput = voiceOutput.subscribe(({ error }) => {
+      if (error) setVoiceError(error);
+    });
+    return () => {
+      offSession();
+      offOutput();
+    };
   }, []);
 
-  const { isListening, isSupported, start: startSTT, stop: stopSTT } = useOfflineSTT({
-    onTranscript: handleTranscript,
-    onError: handleVoiceError,
-  });
+  // Display responses produced through NovaCore — the event bus carries them
+  // for every modality (voice, text, wake word) with no separate pipeline.
+  useEffect(() => {
+    return novaEventBus.on("ai.completed", ({ text }) => {
+      if (text?.trim()) setNovaResponse(text);
+    });
+  }, []);
+
 
   const handleVoiceToggle = useCallback(() => {
     setVoiceError(null);
-    if (isListening) {
-      stopSTT();
-      ttsRouter.stop(); // Stop any playing TTS
+    if (sessionActive) {
+      voiceSession.stop();
+      voiceOutput.interrupt();
       setAvatarState("idle");
     } else {
-      startSTT();
+      voiceSession.setUserId(user?.uid || "");
+      void voiceSession.start();
       setAvatarState("listening");
     }
-  }, [isListening, startSTT, stopSTT]);
+  }, [sessionActive, user?.uid]);
 
-  useWakeWord({ onWake: () => { if (!isListening) { startSTT(); setAvatarState("listening"); } } });
+  // Wake word arms the unified session (same brain as everywhere else).
+  useWakeWord({ onWake: () => { if (!sessionActive) { voiceSession.setUserId(user?.uid || ""); void voiceSession.start(); setAvatarState("listening"); } } });
+
+  const isListening = sessionActive && voiceStateMachine.current !== "speaking";
 
   const handleCommand = useCallback((action: string) => {
     const routes: Record<string, string> = {
@@ -232,6 +207,12 @@ export default function Dashboard() {
     };
     navigate(routes[action] || "/chat");
   }, [navigate]);
+
+  const handleToggleMute = useCallback(() => {
+    const next = !isMuted;
+    setIsMuted(next);
+    voiceOutput.setMuted(next);
+  }, [isMuted]);
 
   const handleSignOut = async () => {
     logActivity("auth", "Signed out", "logout");
@@ -275,7 +256,7 @@ export default function Dashboard() {
                 {[
                   { label: "AI Mode", value: getAIMode().charAt(0).toUpperCase() + getAIMode().slice(1), color: "#00d4ff", icon: Cpu },
                   { label: "Memory", value: `${memoryCount} Stored`, color: "#8b5cf6", icon: Brain },
-                  { label: "Voice", value: isListening ? "Listening" : (ttsRouter.isBarkAvailable() ? "Bark Ready" : "Browser TTS"), color: "#00d4ff", icon: Mic },
+                  { label: "Voice", value: isListening ? "Listening" : (voiceOutput.isBarkAvailable() ? "Bark Ready" : "Browser TTS"), color: "#00d4ff", icon: Mic },
                   { label: "Agents", value: `${agents.length} Available`, color: "#8b5cf6", icon: Bot },
                   { label: "Conversations", value: `${convCount} Total`, color: "#00d4ff", icon: MessageSquare },
                 ].map((item) => (
@@ -303,15 +284,9 @@ export default function Dashboard() {
                     glow
                     label={`Nova ${avatarState}`}
                   />
-                  {!isSupported && (
-                    <p className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-xs text-[#f59e0b] whitespace-nowrap">
-                      Voice not supported
-                    </p>
-                  )}
                 </div>
                 <Button
                   onClick={handleVoiceToggle}
-                  disabled={!isSupported}
                   className={`h-12 px-8 rounded-full font-semibold text-sm transition-all duration-300 ${
                     isListening
                       ? "bg-[#f43f5e] text-white shadow-lg shadow-[#f43f5e]/30"
@@ -323,7 +298,7 @@ export default function Dashboard() {
                 {voiceError && (
                   <p className="text-xs text-[#f59e0b] max-w-md text-center">⚠️ {voiceError}</p>
                 )}
-                <button onClick={() => setIsMuted(!isMuted)} className="text-[#5a7a9a] hover:text-[#c8d6e5] transition-colors" aria-label={isMuted ? "Unmute voice output" : "Mute voice output"}>
+                <button onClick={handleToggleMute} className="text-[#5a7a9a] hover:text-[#c8d6e5] transition-colors" aria-label={isMuted ? "Unmute voice output" : "Mute voice output"}>
                   {isMuted ? <VolumeX className="h-4 w-4" aria-hidden="true" /> : <Volume2 className="h-4 w-4" aria-hidden="true" />}
                 </button>
                 {novaResponse && (

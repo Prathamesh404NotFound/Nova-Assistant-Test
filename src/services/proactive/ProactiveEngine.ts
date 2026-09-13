@@ -12,7 +12,7 @@
 
 import { novaEventBus } from "@/services/nova-core/NovaEventBus";
 import { notificationService } from "@/services/notifications/NotificationService";
-import { ttsRouter } from "@/services/tts/tts-router";
+import { voiceOutput } from "@/services/voice-core/VoiceOutput"; // canonical voice layer — not legacy ttsRouter
 import { proactiveContext } from "./ProactiveContext";
 import { proactiveScheduler } from "./ProactiveScheduler";
 import { evaluateRule, URGENCY_RANK } from "./ProactiveRules";
@@ -139,7 +139,7 @@ class ProactiveEngine {
       ruleResult.spokenText
     ) {
       try {
-        await ttsRouter.speak(ruleResult.spokenText);
+        await voiceOutput.speak(ruleResult.spokenText);
         spoke = true;
       } catch { /* TTS unavailable — text path still works */ }
     }

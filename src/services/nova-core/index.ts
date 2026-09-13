@@ -6,6 +6,7 @@ export { novaObserver, type ToolObservation } from "./NovaObserver";
 export { novaWorld } from "./NovaContext";
 export { novaEventBus } from "./NovaEventBus";
 export { novaAutomationBridge } from "./NovaAutomationBridge";
+export { setNovaUser, getCurrentUserId } from "./NovaUserContext";
 export type {
   NovaRequest,
   NovaResponse,

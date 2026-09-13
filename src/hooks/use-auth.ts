@@ -9,6 +9,7 @@ import {
   type User,
 } from "firebase/auth";
 import { auth, googleProvider, isFirebaseReady } from "@/lib/firebase";
+import { setNovaUser } from "@/services/nova-core/NovaUserContext";
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
@@ -27,10 +28,13 @@ export function useAuth() {
       auth,
       (u) => {
         setUser(u);
+        // Canonical propagation: world state, voice session, proactive engine.
+        setNovaUser(u?.uid ?? null);
         setIsLoading(false);
       },
       (_err) => {
         setUser(null);
+        setNovaUser(null);
         setIsLoading(false);
       }
     );
@@ -83,6 +87,7 @@ export function useAuth() {
 
   const signOut = useCallback(async () => {
     setUser(null);
+    setNovaUser(null); // fail-closed: stop voice/proactive, clear user state
     if (auth) {
       try {
         await firebaseSignOut(auth);
