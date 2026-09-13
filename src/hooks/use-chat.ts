@@ -15,7 +15,6 @@ import { routeMessage, type AIRouterSource } from "@/ai/AIRouter";
 import { getAIMode, type AIMode } from "@/ai/local/LocalAISettings";
 import { IntentRouter } from "@/services/ai/intent-router";
 import { responseCache } from "@/services/ai/response-cache";
-import { LocalConversationEngine } from "@/services/ai/local-conversation";
 import { novaCore } from "@/services/nova-core/NovaCore";
 import { type Intent } from "@/services/ai/types";
 import {
@@ -415,16 +414,17 @@ export function useChat({ apiKey = "", userId = "", onNavigate, onSpeak }: UseCh
         // Check if this request was aborted
         if (abortRef.current || activeRequestRef.current !== requestId) return;
 
-        // Handle empty response with local fallback
+        // Handle empty response honestly — never a canned filler.
         let finalText = coreResponse.text;
         if (!finalText || finalText.trim().length === 0) {
-          finalText = LocalConversationEngine.generateResponse(trimmed) || "I couldn't generate a response. Please try rephrasing.";
+          finalText = "I couldn't generate a response for that. Please try rephrasing, or check AI settings if the problem persists.";
         }
 
         setLastSource(coreResponse.source === "gemini" ? "gemini" : "local");
         await finalizeAssistant(finalText, coreResponse.source === "gemini" ? "gemini" : "local", coreResponse.metadata?.latencyMs ?? 0);
 
-        // Cache successful AI-generated responses (not tool/error paths)
+        // Cache successful AI-generated responses (not tool/error paths).
+        // responseCache.set rejects generic canned text at write time.
         if (coreResponse.status === "success") {
           responseCache.set(trimmed, mode, finalText, coreResponse.source === "gemini" ? "gemini" : "local");
         }

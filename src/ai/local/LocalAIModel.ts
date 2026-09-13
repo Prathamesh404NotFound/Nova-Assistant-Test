@@ -179,12 +179,14 @@ export async function generateLocally(
   const lastMsg = (generated as any).generated_text;
   if (Array.isArray(lastMsg)) {
     const lastAssistant = lastMsg.filter((m: any) => m.role === "assistant").pop();
-    return lastAssistant?.content?.trim() || "I'm not sure how to respond to that.";
+    // Return "" on empty generation — callers must surface an honest failure
+    // (and may escalate to another backend), never a canned phrase.
+    return lastAssistant?.content?.trim() || "";
   }
   if (typeof lastMsg === "string") {
-    return lastMsg.trim() || "I'm not sure how to respond to that.";
+    return lastMsg.trim() || "";
   }
-  return "I'm not sure how to respond to that.";
+  return "";
 }
 
 /**
@@ -227,7 +229,7 @@ export async function generateStream(
       fullResponse = lastMsg.trim();
     }
 
-    if (!fullResponse) fullResponse = "I'm not sure how to respond to that.";
+    if (!fullResponse) return ""; // honest empty — caller escalates or errors
 
     callbacks?.onToken?.(fullResponse);
     callbacks?.onDone?.();

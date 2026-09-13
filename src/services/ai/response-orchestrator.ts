@@ -42,10 +42,17 @@ export class ResponseOrchestrator {
       const requiresGemini = EscalationEngine.shouldEscalateToGemini(input, intentResult);
 
       if (!requiresGemini) {
-        // LOCAL EXECUTION PATH (<100ms)
+        // LOCAL EXECUTION PATH (<100ms) — deterministic tools only.
+        // When the local engine signals __ESCALATE_TO_AI__ (conversation /
+        // knowledge input), fall through to the real AI path below. A canned
+        // acknowledgement here was the original canned-response bug.
         const localStart = performance.now();
         const localRes = await LocalResponseEngine.handle(input, intentResult);
         const toolMs = Math.round(performance.now() - localStart);
+
+        if (localRes.navigationTarget === "__ESCALATE_TO_AI__") {
+          // continue to the Gemini escalation path below
+        } else {
 
         const totalMs = Math.round(performance.now() - startTime);
         latencyMonitor.record({
@@ -66,8 +73,9 @@ export class ResponseOrchestrator {
           toolResult: localRes.toolResult,
         };
 
-        requestDeduplicator.setCached(fingerprint, response);
-        return response;
+          requestDeduplicator.setCached(fingerprint, response);
+          return response;
+        }
       }
 
       // GEMINI ESCALATION PATH

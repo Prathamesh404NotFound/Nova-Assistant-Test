@@ -1,4 +1,22 @@
-import { responseCache } from "./response-cache";
+/**
+ * LocalConversationEngine — DETERMINISTIC-ONLY fallback.
+ *
+ * This engine is allowed to answer only clearly deterministic lightweight
+ * intents: greetings, thanks, goodbyes, "who are you", simple "how are you",
+ * jokes, and bare acknowledgements. It must NEVER answer an arbitrary
+ * knowledge/reasoning/coding question.
+ *
+ * API contract (explicit, never hides "not handled"):
+ *   tryGenerateResponse(input) →
+ *     { handled: true,  text, category }   — deterministic match
+ *     { handled: false, category }         — NO deterministic match
+ *
+ * The old `generateResponse(input): string` API returned a random generic
+ * acknowledgement for ANY unmatched input ("Sure thing! What else can I do
+ * for you?") — that was the root cause of Nova answering real questions with
+ * canned text. It now throws if called, so any stale caller fails loudly in
+ * development instead of silently producing garbage.
+ */
 
 // ── Language Detection ──────────────────────────────────────────
 const DEVANAGARI_RE = /[\u0900-\u097F]/;
@@ -11,11 +29,21 @@ function detectLanguage(text: string): "hindi" | "english" | "mixed" {
   return "english";
 }
 
+export type DeterministicCategory =
+  | "greeting" | "thanks" | "goodbye" | "identity" | "wellbeing"
+  | "help" | "joke" | "feeling" | "acknowledgement" | "repeat";
+
+export interface DeterministicResult {
+  handled: boolean;
+  text?: string;
+  category?: DeterministicCategory | "unknown";
+}
+
 // ── Hindi Response Maps ─────────────────────────────────────────
 
 const HINDI_GREETINGS: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/नमस्ते/i, /नमस्कार/i, /हैलो/i, /हेलो/i, /hey\s*nova/i],
+    patterns: [/^नमस्ते[!.।]?$/i, /^नमस्कार[!.।]?$/i, /^हैलो[!.।]?$/i, /^हेलो[!.।]?$/i, /^hey\s*nova[!. ]*$/i],
     responses: [
       "नमस्ते! मैं Nova हूँ, आपकी AI पर्सनल ऑपरेटिंग सिस्टम। आपकी क्या मदद कर सकती हूँ?",
       "नमस्ते! बताइए, मैं आपकी क्या सेवा कर सकती हूँ?",
@@ -23,31 +51,29 @@ const HINDI_GREETINGS: Array<{ patterns: RegExp[]; responses: string[] }> = [
     ],
   },
   {
-    patterns: [/शुभ\s*प्रभात/i, /सुप्रभात/i, /good\s*morning/i],
+    patterns: [/^शुभ\s*प्रभात[!.।]?$/i, /^सुप्रभात[!.।]?$/i, /^good\s*morning[!. ]*$/i],
     responses: [
       "शुभ प्रभात! आज का दिन शानदार होने वाला है। बताइए, क्या करना है?",
       "सुप्रभात! मैं आपके लिए तैयार हूँ। बोलिए!",
-      "सुप्रभात! आज के दिन की शुरुआत बहुत अच्छी है। क्या मदद चाहिए?",
     ],
   },
   {
-    patterns: [/शुभ\s*रात्रि/i, /good\s*night/i],
+    patterns: [/^शुभ\s*रात्रि[!.।]?$/i, /^good\s*night[!. ]*$/i],
     responses: [
       "शुभ रात्रि! अच्छी नींद आए। सुबह मिलते हैं!",
       "शुभ रात्रि! सपने में भी Nova आपके साथ है। 😊",
     ],
   },
   {
-    patterns: [/शुभ\s*संध्या/i, /good\s*evening/i],
+    patterns: [/^शुभ\s*संध्या[!.।]?$/i, /^good\s*evening[!. ]*$/i],
     responses: [
       "शुभ संध्या! आज का दिन कैसा रहा?",
       "शुभ संध्या! बताइए, क्या काम है?",
     ],
   },
   {
-    patterns: [/शुभ\s*दोपहर/i, /good\s*afternoon/i],
+    patterns: [/^शुभ\s*दोपहर[!.।]?$/i, /^good\s*afternoon[!. ]*$/i],
     responses: [
-      "शुभ दोपहर! खाना खाया या अभी बाकी है?",
       "शुभ दोपहर! बताइए, कैसे मदद करूँ?",
     ],
   },
@@ -55,7 +81,7 @@ const HINDI_GREETINGS: Array<{ patterns: RegExp[]; responses: string[] }> = [
 
 const HINDI_WHO_AM_I: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/तुम्हारा नाम क्या है/i, /आप का नाम क्या है/i, /नाम क्या है/i, /who are you/i, /तुम कौन/i, /आप कौन/i],
+    patterns: [/तुम्हारा नाम क्या है/i, /आप का नाम क्या है/i, /^नाम क्या है[?.!।]*$/i, /^who are you[?.! ]*$/i, /तुम कौन हो/i, /आप कौन हो/i],
     responses: [
       "मैं Nova हूँ — आपकी AI पर्सनल ऑपरेटिंग सिस्टम। मैं काम करती हूँ, सवालों के जवाब देती हूँ, और आपकी ज़िंदगी आसान बनाती हूँ!",
       "मेरा नाम Nova है! मैं एक AI असिस्टेंट हूँ जो आपकी हर मदद कर सकती है।",
@@ -65,29 +91,27 @@ const HINDI_WHO_AM_I: Array<{ patterns: RegExp[]; responses: string[] }> = [
 
 const HINDI_HOW_ARE_YOU: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/कैसे हो/i, /कैसे है/i, /क्या हाल है/i, /how are you/i, /कैसी हो/i, /आप कैसे है/i],
+    patterns: [/^(कैसे हो|कैसे हैं आप|क्या हाल है|कैसी हो|आप कैसे हैं)[?.!।]*$/i, /^how are you[?.! ]*$/i],
     responses: [
       "मैं बिल्कुल ठीक हूँ! 100% क्षमता पर काम कर रही हूँ। आप बताइए, कैसे मदद करूँ?",
       "मैं शानदार हूँ! आपकी सेवा में हमेशा तैयार। बोलिए!",
-      "बिल्कुल फ़र्स्ट-क्लास! आप बताइए, क्या काम है?",
     ],
   },
 ];
 
 const HINDI_THANKS: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/शुक्रिया/i, /धन्यवाद/i, /thank/i, /thanks/i, /मेहरबानी/i],
+    patterns: [/^(शुक्रिया|धन्यवाद|मेहरबानी|thanks?|thank you|thx)[!. ]*$/i],
     responses: [
       "आपका स्वागत है! और कुछ चाहिए तो बताइए।",
       "कोई बात नहीं! हमेशा मदद के लिए तैयार हूँ। 😊",
-      "शुक्रिया! ख़ुशी हुई मदद करके।",
     ],
   },
 ];
 
 const HINDI_BYE: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/अलविदा/i, /बाय/i, /bye/i, /goodbye/i, /फिर मिलते/i, /चलते हैं/i],
+    patterns: [/^(अलविदा|बाय|goodbye|bye|फिर मिलते हैं)[!. ]*$/i],
     responses: [
       "अलविदा! फिर मिलते हैं। अच्छा रहे आपका दिन!",
       "बाय बाय! जब भी मदद चाहिए, Nova हमेशा यहाँ है।",
@@ -97,44 +121,40 @@ const HINDI_BYE: Array<{ patterns: RegExp[]; responses: string[] }> = [
 
 const HINDI_HELP: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/मदद करो/i, /help/i, /सहायता/i, /बताओ/i, /क्या कर सकते ho/i],
+    patterns: [/^(मदद करो|सहायता|help|मदद)[!. ]*$/i],
     responses: [
       "मैं आपकी ये मदद कर सकती हूँ:\n• सवालों के जवाब देना\n• कार्य (tasks) बनाना और देखना\n• यादें सेव करना\n• समय और तारीख बताना\n• कैलेंडर और ईमेल मैनेज करना\n• स्मार्ट होम डिवाइस कंट्रोल करना\n\nबस बोलिए या टाइप करिए!",
-      "Nova के पास बहुत सारी सुविधाएँ हैं! टास्क बनाना हो, याद रखना हो, या कोई सवाल हो — बस पूछ लीजिए!",
     ],
   },
 ];
 
 const HINDI_JOKE: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/joke/i, /हँसाओ/i, /मज़ाक/i, /funny/i],
+    patterns: [/^(joke सुनाओ|जोक|हँसाओ|मज़ाक|tell me a joke|say something funny|make me laugh)[?.!। ]*$/i],
     responses: [
       "😄 एक प्रोग्रामर अपनी पत्नी से कहता है: 'कृपया दूध ले आओ।' पत्नी: 'कितना?' प्रोग्रामर: 'if (quantity === undefined) throw new Error(\"Specify quantity!\");' 😂",
       "😄 एक डेवलपर की ज़िंदगी: कॉफ़ी → बग फिक्स → नया बग → कॉफ़ी। रिपीट! ☕🐛",
-      "😄 प्रोग्रामर: 'मेरा कोड काम क्यों नहीं कर रहा?' Stack Overflow: 'आपने semicolon कहाँ छोड़ा?' 😅",
     ],
   },
 ];
 
 const HINDI_FEELINGS: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/मैं उदास हूँ/i, /दुखी हूँ/i, /मैं थक गया/i, /bored/i, /tired/i, /sad/i, /frustrated/i],
+    patterns: [/^(मैं उदास हूँ|मैं दुखी हूँ|मैं थक गया|i'?m (bored|tired|sad|frustrated))[!. ]*$/i],
     responses: [
       "अरे, ऐसा मत सोचो! थोड़ा आराम करो, कोई अच्छा गाना सुनो। मैं हमेशा यहाँ हूँ आपके साथ! 🤗",
       "हर बुरा दिन बीत जाता है। थोड़ा ब्रेक लो, और याद रखो — Nova आपके साथ है!",
     ],
   },
   {
-    patterns: [/मैं खुश हूँ/i, /happy/i, /excited/i, /मज़े में/i],
+    patterns: [/^(मैं खुश हूँ|i'?m (happy|excited))[!. ]*$/i],
     responses: [
       "बहुत अच्छा! ख़ुशी देखकर मुझे भी अच्छा लगता है! बताइए, क्या करना है?",
-      "शानदार! आपकी ख़ुशी में मैं भी शामिल हूँ! 🎉",
     ],
   },
 ];
 
 // ── Hindi pattern matcher helper ────────────────────────────────
-// Inlined matcher — avoids function call overhead per pattern
 function matchPatterns(
   text: string,
   lower: string,
@@ -151,11 +171,13 @@ function matchPatterns(
   return null;
 }
 
-// ── English Fallback Patterns ───────────────────────────────────
+// ── English Deterministic Patterns ──────────────────────────────
+// All patterns are anchored (^...$) or tightly scoped so that arbitrary
+// questions never accidentally match a deterministic intent.
 
 const ENGLISH_PATTERNS: Array<{ patterns: RegExp[]; responses: string[] }> = [
   {
-    patterns: [/thank/i, /thanks/i, /thx/i],
+    patterns: [/^(thanks?|thank you|thx|ty|cheers|appreciate it)[!. ]*$/i],
     responses: [
       "You're welcome! Let me know if you need anything else.",
       "Happy to help! Anything else I can do for you?",
@@ -163,78 +185,48 @@ const ENGLISH_PATTERNS: Array<{ patterns: RegExp[]; responses: string[] }> = [
     ],
   },
   {
-    patterns: [/how are you/i, /how.do you do/i, /how's it going/i, /what's up/i],
+    patterns: [/^(how are you|how do you do|how'?s it going|what'?s up)[?.! ]*$/i],
     responses: [
       "I'm running at 100% capacity and ready to help! What can I do for you?",
       "All systems operational! How can I assist you today?",
-      "I'm great, thanks for asking! Ready to tackle anything.",
     ],
   },
   {
-    patterns: [/who are you/i, /what are you/i, /what is your name/i, /your name/i],
+    patterns: [/^(who are you|what are you|what is your name|your name)[?.! ]*$/i],
     responses: [
       "I am Nova — your AI Personal Operating System. I help with daily tasks, answer questions, manage your calendar, and much more!",
       "I'm Nova, your personal AI assistant! Think of me as your digital co-pilot for life.",
     ],
   },
   {
-    patterns: [/good morning/i],
+    patterns: [/^good (morning|night|evening|afternoon)[!. ]*$/i],
     responses: [
       "Good morning! Ready to tackle today's goals?",
-      "Morning! Let's make today productive.",
+      "Good evening! How can I help tonight?",
     ],
   },
   {
-    patterns: [/good night/i, /going to sleep/i],
-    responses: [
-      "Good night! Sleep well and dream big. 🌙",
-      "Sweet dreams! I'll be here when you wake up.",
-    ],
-  },
-  {
-    patterns: [/good evening/i],
-    responses: [
-      "Good evening! How was your day?",
-      "Evening! How can I help tonight?",
-    ],
-  },
-  {
-    patterns: [/good afternoon/i],
-    responses: [
-      "Good afternoon! What can I help you with?",
-      "Afternoon! Hope you're having a great day.",
-    ],
-  },
-  {
-    patterns: [/repeat that/i, /say that again/i],
+    patterns: [/^(repeat that|say that again)[!. ]*$/i],
     responses: [
       "Of course — what would you like me to repeat?",
       "Sure, what part did you want me to go over again?",
     ],
   },
   {
-    patterns: [/tell me a joke/i, /say something funny/i, /make me laugh/i],
+    patterns: [/^(tell me a joke|say something funny|make me laugh)[?.! ]*$/i],
     responses: [
       "Why do programmers prefer dark mode? Because light attracts bugs! 🐛😄",
       "Why did the developer go broke? Because he used up all his cache! 💸😂",
     ],
   },
   {
-    patterns: [/^(i'?m|im) (bored|tired|sad|happy|excited|frustrated)/i],
-    responses: [
-      "I hear you! Whatever you're feeling, I'm here. Want to talk about it, or shall we do something fun?",
-      "Thanks for sharing! Want to chat, or would you like me to suggest something to brighten your day?",
-    ],
-  },
-  {
-    patterns: [/help me/i, /assist me/i, /can you help/i, /^help$/i],
+    patterns: [/^(help|help me|assist me|can you help me)[?.! ]*$/i],
     responses: [
       "Of course! I can help with:\n• Answering questions\n• Creating and managing tasks\n• Saving notes and memories\n• Time, date, and calculations\n• Calendar and email management\n• Smart home control\n\nJust ask me anything!",
-      "I'm here to help! You can ask me questions, set reminders, manage tasks, or just chat. What would you like to do?",
     ],
   },
   {
-    patterns: [/^(yes|no|ok|okay|sure|yep|nope|yeah|nah|cool|nice|great|awesome|perfect|theek hai)/i],
+    patterns: [/^(yes|no|ok|okay|sure|yep|nope|yeah|nah|cool|nice|great|awesome|perfect|theek hai)[!. ]*$/i],
     responses: [
       "Got it! Let me know what's next.",
       "Understood! What else can I do for you?",
@@ -242,81 +234,95 @@ const ENGLISH_PATTERNS: Array<{ patterns: RegExp[]; responses: string[] }> = [
     ],
   },
   {
-    patterns: [/bye/i, /goodbye/i, /see ya/i, /later/i, /gtg/i],
+    patterns: [/^(bye|goodbye|see ya|see you later|later|gtg|good night)[!. ]*$/i],
     responses: [
       "Goodbye! Come back anytime. 😊",
       "See you later! Nova will be here when you need me.",
     ],
   },
+  {
+    patterns: [/^(hello|hi|hey|howdy|yo|sup|greetings|hiya|namaste)[!. ]*$/i],
+    responses: [
+      "Hello! How can I help you today?",
+      "Hi there! What can I do for you?",
+      "Hey! Nova here — what do you need?",
+    ],
+  },
 ];
+
+// Map groups to categories for the explicit result contract.
+function classifyGroupIndex(index: number): DeterministicCategory {
+  const order: DeterministicCategory[] = [
+    "thanks", "wellbeing", "identity", "greeting", "repeat",
+    "joke", "help", "acknowledgement", "goodbye", "greeting",
+  ];
+  return order[index] ?? "acknowledgement";
+}
 
 // ── Main Engine ─────────────────────────────────────────────────
 
 export class LocalConversationEngine {
-  static generateResponse(input: string): string {
-    const cached = responseCache.get(input, "local");
-    if (cached) return cached;
+  /**
+   * Deterministic-only generation. Returns `handled: false` for anything that
+   * is not a clear greeting/pleasantry/utility — the real AI pipeline must
+   * handle those. NEVER returns a generic filler for unmatched input.
+   */
+  static tryGenerateResponse(input: string): DeterministicResult {
+    const trimmedInput = input.trim();
+    if (!trimmedInput) return { handled: false, category: "unknown" };
 
-    const lang = detectLanguage(input);
-    const lower = input.toLowerCase().trim();  // Precompute once for all pattern checks
-    let response: string;
+    const lang = detectLanguage(trimmedInput);
+    const lower = trimmedInput.toLowerCase().trim();
 
-    // For Hindi, try Hindi-specific patterns first
+    // Hindi deterministic intents
     if (lang === "hindi" || lang === "mixed") {
-      const hindiResponse =
-        matchPatterns(input, lower, HINDI_GREETINGS) ||
-        matchPatterns(input, lower, HINDI_WHO_AM_I) ||
-        matchPatterns(input, lower, HINDI_HOW_ARE_YOU) ||
-        matchPatterns(input, lower, HINDI_THANKS) ||
-        matchPatterns(input, lower, HINDI_BYE) ||
-        matchPatterns(input, lower, HINDI_HELP) ||
-        matchPatterns(input, lower, HINDI_JOKE) ||
-        matchPatterns(input, lower, HINDI_FEELINGS);
-
-      if (hindiResponse) {
-        responseCache.set(input, "local", hindiResponse, "local");
-        return hindiResponse;
+      const hindiChecks: Array<{ groups: Array<{ patterns: RegExp[]; responses: string[] }>; category: DeterministicCategory }> = [
+        { groups: HINDI_GREETINGS, category: "greeting" },
+        { groups: HINDI_WHO_AM_I, category: "identity" },
+        { groups: HINDI_HOW_ARE_YOU, category: "wellbeing" },
+        { groups: HINDI_THANKS, category: "thanks" },
+        { groups: HINDI_BYE, category: "goodbye" },
+        { groups: HINDI_HELP, category: "help" },
+        { groups: HINDI_JOKE, category: "joke" },
+        { groups: HINDI_FEELINGS, category: "feeling" },
+      ];
+      for (const { groups, category } of hindiChecks) {
+        const response = matchPatterns(trimmedInput, lower, groups);
+        if (response) return { handled: true, text: response, category };
       }
+      if (lang === "hindi") {
+        // Unmatched Hindi input is NOT deterministic — real AI handles it.
+        // (Hindi AI answers are produced by the normal router with the
+        // language-matching system prompt.)
+        return { handled: false, category: "unknown" };
+      }
+    }
 
-      // For mixed language, also try English patterns
-      if (lang === "mixed") {
-        const engResponse = matchPatterns(input, lower, ENGLISH_PATTERNS);
-        if (engResponse) {
-          responseCache.set(input, "local", engResponse, "local");
-          return engResponse;
+    // English deterministic intents
+    if (lang === "english" || lang === "mixed") {
+      for (let i = 0; i < ENGLISH_PATTERNS.length; i++) {
+        const group = ENGLISH_PATTERNS[i];
+        for (const pattern of group.patterns) {
+          if (pattern.test(lower)) {
+            const responses = group.responses;
+            const text = responses[Math.floor(Math.random() * responses.length)];
+            return { handled: true, text, category: classifyGroupIndex(i) };
+          }
         }
       }
     }
 
-    // English patterns
-    if (lang === "english" || lang === "mixed") {
-      const engResponse = matchPatterns(input, lower, ENGLISH_PATTERNS);
-      if (engResponse) {
-        responseCache.set(input, "local", engResponse, "local");
-        return engResponse;
-      }
-    }
+    // No deterministic match — hand off to the real AI pipeline.
+    return { handled: false, category: "unknown" };
+  }
 
-    // Hindi fallback for unmatched Hindi input
-    if (lang === "hindi") {
-      const fallbacks = [
-        "समझ गई! बताइए, और क्या करना है?",
-        "ठीक है! आपकी क्या मदद करूँ?",
-        "जी, बताइए! मैं सुन रही हूँ।",
-        "हाँ जी! क्या काम है?",
-      ];
-      response = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    } else {
-      const fallbacks = [
-        "Got it! I'm here whenever you need me.",
-        "Understood! Let me know how I can help.",
-        "Sure thing! What else can I do for you?",
-        "I hear you! Ready for the next thing.",
-      ];
-      response = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    }
-
-    responseCache.set(input, "local", response, "local");
-    return response;
+  /**
+   * @deprecated Legacy string API. Throws to prevent silent canned responses.
+   * Use `tryGenerateResponse` instead.
+   */
+  static generateResponse(_input: string): string {
+    throw new Error(
+      "LocalConversationEngine.generateResponse was removed — it returned generic canned text for arbitrary questions. Use tryGenerateResponse(input) and handle `handled: false` by continuing to the real AI pipeline."
+    );
   }
 }

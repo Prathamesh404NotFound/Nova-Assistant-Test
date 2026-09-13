@@ -59,13 +59,27 @@ class NovaSupervisor {
       return { taskClass: "reasoning", backend: "gemini", reason: "complex reasoning" };
     }
 
-    // Short greetings/smalltalk stay local/fast
-    if (words <= 6 && /^(hi|hello|hey|thanks|thank you|good (morning|evening|night)|namaste)\b/i.test(input)) {
+    // Short greetings/smalltalk stay local/fast (deterministic engine handles
+    // them before any model call).
+    if (words <= 6 && /^(hi|hello|hey|thanks|thank you|good (morning|evening|night)|namaste|bye|goodbye)[!. ]*$/i.test(input)) {
       return { taskClass: "conversation", backend: "local", reason: "smalltalk" };
     }
 
-    // Default: normal chat — backend decided by the existing AIRouter mode.
-    return { taskClass: "conversation", backend: request.mode === "gemini" ? "gemini" : "local", reason: "general conversation" };
+    // Coding requests → code class (model choice by router task mapping).
+    if (/\b(code|function|script|debug|refactor|write a|implement|typescript|python|javascript|react component)\b/i.test(input)) {
+      return { taskClass: "code", backend: "gemini", reason: "coding request" };
+    }
+
+    // Knowledge questions (what/why/how/explain/compare/…) — ALWAYS real AI,
+    // regardless of length. Short questions like "What is JavaScript?" are
+    // knowledge queries, not smalltalk.
+    if (/^(what|why|how|who|when|where|which|explain|compare|describe|tell me about|is|are|can|does|do)\b/i.test(input) || /\?$/.test(input)) {
+      return { taskClass: "simple_answer", backend: "gemini", reason: "knowledge question" };
+    }
+
+    // Default: unclassified input → still real AI. "Unknown" never means a
+    // canned response — the backend just lets the router decide by mode.
+    return { taskClass: "unknown", backend: request.mode === "gemini" ? "gemini" : "gemini", reason: "unclassified → real AI" };
   }
 }
 

@@ -1,7 +1,27 @@
 /**
  * Nova AI OS — Response Cache
  * LRU cache for AI responses to avoid redundant API calls.
+ *
+ * CACHE VERSIONING: CACHE_VERSION is part of every key. Bumping it (v2)
+ * instantly orphans any legacy entries — including the old generic fallback
+ * responses ("Sure thing!…") that LocalConversationEngine used to cache —
+ * without needing a migration sweep. Generic canned responses are also
+ * rejected at write time so the legacy bug can never poison the cache again.
  */
+
+const CACHE_VERSION = "v2";
+
+/** Phrases that must never be cached — they were the legacy canned bug. */
+const GENERIC_MARKERS = [
+  /i hear you! ready for the next thing/i,
+  /sure thing! what else can i do for you/i,
+  /got it! i'?m here whenever you need me/i,
+  /understood! let me know how i can help/i,
+];
+
+function isGenericCanned(text: string): boolean {
+  return GENERIC_MARKERS.some((re) => re.test(text));
+}
 
 interface CacheEntry {
   key: string;
@@ -22,7 +42,7 @@ class ResponseCache {
   }
 
   private generateKey(input: string, mode: string): string {
-    return `${mode}:${input.toLowerCase().trim()}`;
+    return `${CACHE_VERSION}:${mode}:${input.toLowerCase().trim()}`;
   }
 
   get(input: string, mode: string): string | null {
@@ -46,6 +66,9 @@ class ResponseCache {
   }
 
   set(input: string, mode: string, response: string, source: "local" | "gemini"): void {
+    // Never cache generic canned responses — reject at write time.
+    if (!response || isGenericCanned(response)) return;
+
     const key = this.generateKey(input, mode);
 
     // If at capacity, remove least recently used (first entry)

@@ -159,4 +159,6 @@ export type NovaTaskClass =
   | "conversation"
   | "tool_action"
   | "multi_step"
-  | "reasoning";
+  | "reasoning"
+  | "code"
+  | "unknown";

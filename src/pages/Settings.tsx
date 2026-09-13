@@ -11,6 +11,7 @@ import { voiceOutput } from "@/services/voice-core/VoiceOutput"; // canonical vo
 import type { VoiceSettings } from "@/services/tts/tts-router"; // settings type only
 import { checkFirebaseHealth } from "@/services/data/NovaCloudDataService";
 import { KillSwitchPanel } from "@/components/nova/KillSwitchPanel";
+import { runAIDiagnostic } from "@/services/ai/ai-diagnostic";
 import { useAuth } from "@/hooks/use-auth";
 import { permissionsService, REQUIRED_PERMISSIONS, type PermissionId } from "@/services/permissions";
 import { BARK_VOICE_PRESETS } from "@/services/tts/bark-voices";
@@ -69,6 +70,8 @@ export default function SettingsPage() {
   const [voiceTest, setVoiceTest] = useState<Awaited<ReturnType<typeof voiceOutput.testVoice>> | null>(null);
   const [firebaseHealth, setFirebaseHealth] = useState<Awaited<ReturnType<typeof checkFirebaseHealth>> | null>(null);
   const [firebaseChecking, setFirebaseChecking] = useState(false);
+  const [aiDiagResults, setAiDiagResults] = useState<Awaited<ReturnType<typeof runAIDiagnostic>>>([]);
+  const [aiDiagRunning, setAiDiagRunning] = useState(false);
   const [devMode, setDevMode] = useState(() => localStorage.getItem("nova_dev_mode") === "true");
   const [permissions, setPermissions] = useState(() => permissionsService.getAll());
   const [permBusy, setPermBusy] = useState(false);
@@ -563,6 +566,47 @@ export default function SettingsPage() {
               </Card>
             ) : (
               <Card className="nova-glass p-5 space-y-4">
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="text-sm text-[#c8d6e5]">Run AI Diagnostic</p>
+                    <p className="text-xs text-[#5a7a9a]">Tests deterministic handler, local Qwen, Gemini, router, context, and streaming</p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-[#00d4ff]"
+                    disabled={aiDiagRunning}
+                    onClick={async () => {
+                      setAiDiagRunning(true);
+                      try {
+                        setAiDiagResults(await runAIDiagnostic());
+                      } finally {
+                        setAiDiagRunning(false);
+                      }
+                    }}
+                  >
+                    <Activity className="h-4 w-4 mr-1" /> {aiDiagRunning ? "Running…" : "Run"}
+                  </Button>
+                </div>
+                {aiDiagResults.length > 0 && (
+                  <div className="space-y-1.5 border-t border-[#1a2f4a] pt-3">
+                    {aiDiagResults.map((r) => (
+                      <div key={r.name} className="flex items-center gap-2 text-xs">
+                        <span
+                          className={cn(
+                            "font-mono text-[10px] font-bold w-12 shrink-0",
+                            r.status === "PASS" ? "text-[#10b981]" : r.status === "FAIL" ? "text-[#f43f5e]" : "text-[#5a7a9a]"
+                          )}
+                        >
+                          {r.status}
+                        </span>
+                        <span className="text-[#c8d6e5] font-medium w-28 shrink-0">{r.name}</span>
+                        <span className="text-[#5a7a9a] truncate" title={`${r.detail} (${r.durationMs}ms)`}>{r.detail}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex items-center justify-between py-2">
                   <div>
                     <p className="text-sm text-[#c8d6e5]">TTS Diagnostics</p>

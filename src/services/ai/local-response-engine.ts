@@ -1,6 +1,6 @@
 import { IntentResult } from "./types";
 import { memoryManager } from "../memory/memory-manager";
-import { LocalConversationEngine } from "./local-conversation";
+import { LocalConversationEngine, type DeterministicResult } from "./local-conversation";
 
 export interface LocalResponseResult {
   text: string;
@@ -154,11 +154,23 @@ export class LocalResponseEngine {
         return { text: "Device command executed." };
       }
 
-      case "GREETING":
+      case "GREETING": {
+        // Greetings are deterministic by definition — the engine is anchored
+        // so a greeting intent only ever matches actual greetings.
+        const deterministic: DeterministicResult = LocalConversationEngine.tryGenerateResponse(input);
+        if (deterministic.handled && deterministic.text) {
+          return { text: deterministic.text };
+        }
+        // Greeting intent without a deterministic match (e.g. unusual
+        // phrasing): escalate to the real AI instead of faking it.
+        return { text: "", navigationTarget: "__ESCALATE_TO_AI__" };
+      }
       case "CONVERSATION":
       default: {
-        const conversationalText = LocalConversationEngine.generateResponse(input);
-        return { text: conversationalText };
+        // Arbitrary conversational/knowledge input is NOT deterministic.
+        // Signal escalation so the real AI pipeline generates the answer —
+        // returning a canned acknowledgement here was the original bug.
+        return { text: "", navigationTarget: "__ESCALATE_TO_AI__" };
       }
     }
   }
