@@ -8,6 +8,8 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Route, Routes, useLocation, useNavigate, Navigate } from "react-router";
 import { validateEnvironment } from "@/lib/env-validator";
 import { initCloudSync } from "@/services/data/NovaCloudDataService";
+import { proactiveEngine } from "@/services/proactive/ProactiveEngine";
+import { proactiveWatcher } from "@/services/proactive/ProactiveWatcher";
 import { CommandPalette } from "@/components/CommandPalette";
 import { KeyboardShortcuts } from "@/components/KeyboardShortcuts";
 import { AIServiceProvider } from "@/contexts/AIServiceProvider";
@@ -18,6 +20,8 @@ import "./index.css";
 
 // Offline write queue: flush pending Firebase writes when connection returns.
 initCloudSync();
+proactiveEngine.start();
+proactiveWatcher.start();
 
 // Lazy load all pages
 const Landing = lazy(() => import("./pages/Landing"));

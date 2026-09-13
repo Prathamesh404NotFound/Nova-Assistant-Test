@@ -31,6 +31,7 @@ import {
 } from "@/services/nova/labs";
 import { logActivity } from "@/lib/local-store";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
+import { NovaSuggestions, NovaLiveContext } from "@/components/nova/NovaSuggestions";
 import {
   Mic,
   MicOff,
@@ -349,9 +350,10 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          {/* Right Column - Live Feed */}
-          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3} className="col-span-3">
-            <div className="jarvis-card p-4 h-full">
+          {/* Right Column - Live Feed + Proactive Suggestions */}
+          <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3} className="col-span-3 space-y-4">
+            <NovaSuggestions />
+            <div className="jarvis-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider">Live Activity</h3>
                 {intelligence.length > 0 && (
@@ -379,6 +381,14 @@ export default function Dashboard() {
             </div>
           </motion.div>
         </div>
+
+        {/* ── Live Context (proactive) ─────────────────── */}
+        <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={3} className="col-span-12">
+          <div className="jarvis-card p-4">
+            <h3 className="text-[10px] text-[#5a7a9a] uppercase tracking-wider mb-3">Right Now</h3>
+            <NovaLiveContext />
+          </div>
+        </motion.div>
 
         {/* ── Nova Labs Insights ───────────────────────── */}
         {(debtRollup.totalMinutes > 0 || friction || dueLetter || getAssumptions().some((a) => a.rejected)) && (

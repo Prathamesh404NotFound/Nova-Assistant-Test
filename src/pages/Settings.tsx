@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { LocalAIPanel } from "@/components/local-ai/LocalAIPanel";
 import { GeminiHealthCheck } from "@/components/GeminiHealthCheck";
+import { ProactiveSettingsCard } from "@/components/settings/ProactiveSettingsCard";
 import { ttsRouter, type VoiceSettings } from "@/services/tts/tts-router";
 import { checkFirebaseHealth } from "@/services/data/NovaCloudDataService";
 import { useAuth } from "@/hooks/use-auth";
@@ -201,6 +202,8 @@ export default function SettingsPage() {
                 </div>
               </div>
             </Card>
+
+            <ProactiveSettingsCard userId={user?.uid} />
           </motion.div>
         )}
 
