@@ -27,6 +27,7 @@ proactiveWatcher.start();
 const Landing = lazy(() => import("./pages/Landing"));
 const AuthPage = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
+const NovaPresence = lazy(() => import("./pages/NovaPresence"));
 const ChatPage = lazy(() => import("./pages/Chat"));
 const TasksPage = lazy(() => import("./pages/Tasks"));
 const MemoryPage = lazy(() => import("./pages/Memory"));
@@ -174,9 +175,10 @@ createRoot(document.getElementById("root")!).render(
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<Landing />} />
-            <Route path="/auth" element={<AuthPage redirectAfterAuth="/dashboard" />} />
+            <Route path="/auth" element={<AuthPage redirectAfterAuth="/nova" />} />
 
             {/* Core routes */}
+            <Route path="/nova" element={<ProtectedRoute><NovaPresence /></ProtectedRoute>} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />

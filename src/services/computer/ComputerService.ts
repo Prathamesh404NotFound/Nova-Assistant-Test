@@ -5,6 +5,7 @@
  */
 
 import { desktopAdapter, checkDesktopBridge } from "./DesktopAdapter";
+import { assertComputerControlAllowed } from "@/services/safety/KillSwitch";
 import type {
   DesktopAdapter as IDesktopAdapter,
   WindowInfo,
@@ -107,6 +108,8 @@ class ComputerServiceImpl {
   // ─── Mouse ─────────────────────────────────────────────────────────────
 
   async click(x: number, y: number, button: "left" | "right" | "middle" = "left", doubleClick = false): Promise<ActionVerification> {
+    const blocked = assertComputerControlAllowed();
+    if (blocked) return { verified: false, method: "click", error: blocked };
     if (!this.permissions.mouse) {
       return { verified: false, method: "click", error: "Mouse permission not granted" };
     }
@@ -251,6 +254,8 @@ class ComputerServiceImpl {
   // ─── Application ───────────────────────────────────────────────────────
 
   async launchApp(application: string, args?: string[]): Promise<ActionVerification> {
+    const blocked = assertComputerControlAllowed();
+    if (blocked) return { verified: false, method: "launchApp", error: blocked };
     if (!this.permissions.application) {
       return { verified: false, method: "launchApp", error: "Application permission not granted" };
     }

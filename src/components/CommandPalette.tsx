@@ -45,7 +45,8 @@ interface DataResult {
 }
 
 const commands: Command[] = [
-  { id: "dashboard", label: "Dashboard", icon: Home, path: "/dashboard", keywords: ["home", "main", "start"], category: "page" },
+  { id: "nova", label: "Nova Home", icon: Home, path: "/nova", keywords: ["home", "main", "start", "presence"], category: "page" },
+  { id: "dashboard", label: "Dashboard", icon: Home, path: "/dashboard", keywords: ["cards", "classic"], category: "page" },
   { id: "chat", label: "Chat", icon: MessageSquare, path: "/chat", keywords: ["talk", "ai", "assistant", "conversation"], category: "page" },
   { id: "tasks", label: "Tasks", icon: CheckSquare, path: "/tasks", keywords: ["todo", "checklist", "work"], category: "page" },
   { id: "memory", label: "Memory", icon: Brain, path: "/memory", keywords: ["remember", "notes", "info"], category: "page" },

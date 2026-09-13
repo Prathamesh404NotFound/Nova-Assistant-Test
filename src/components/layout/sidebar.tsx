@@ -154,10 +154,10 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Command Center link (always visible) */}
+      {/* Nova Home link (always visible) */}
       <div className="px-3 pt-3">
         <NavLink
-          to="/dashboard"
+          to="/nova"
           className={({ isActive }) =>
             cn(
               "flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13px] transition-all duration-200",

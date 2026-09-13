@@ -1,7 +1,13 @@
 /**
  * Nova Perception Layer — Desktop Adapter
  * Platform-agnostic abstraction for computer control.
- * Falls back gracefully when desktop bridge is unavailable.
+ *
+ * Command path (in priority order):
+ *   1. Local bridge (localhost:5190) — development desktop companion.
+ *   2. Nova Windows Agent — paired device over the authenticated Firebase
+ *      channel (see AgentBridge). Production path; no localhost dependency.
+ *   3. Honest failure — "This capability requires the Nova desktop agent."
+ * The web layer NEVER fakes OS control.
  */
 
 import type {
@@ -18,6 +24,7 @@ import type {
   ClipboardContent,
   ActionVerification,
 } from "./ComputerTypes";
+import { agentBridge, agentRequiredMessage } from "./AgentBridge";
 
 // ─── Bridge Communication ───────────────────────────────────────────────────
 
@@ -62,25 +69,48 @@ function fail(method: string, error: string): ActionVerification {
 class WebDesktopAdapter implements DesktopAdapter {
   readonly platform = "web" as const;
   private bridgeOnline = false;
+  private agentAvailable = false;
 
   setBridgeOnline(online: boolean): void {
     this.bridgeOnline = online;
   }
 
+  setAgentAvailable(available: boolean): void {
+    this.agentAvailable = available;
+  }
+
+  /**
+   * Execute a tool via the Windows agent channel. Returns null when no
+   * authorized agent is reachable so callers can report honestly.
+   */
+  private async agentExecute(
+    tool: string,
+    params: Record<string, unknown>
+  ): Promise<ActionVerification | null> {
+    const result = await agentBridge.execute(tool, params);
+    if (!result) return null;
+    return result.ok
+      ? ok(true, tool, typeof result.data === "object" ? JSON.stringify(result.data).slice(0, 200) : result.error)
+      : fail(tool, result.error || "Agent execution failed");
+  }
+
+  /** Try local bridge first, then the paired agent; honest failure otherwise. */
   private async sendAction(action: string, params: Record<string, unknown>): Promise<ActionVerification> {
-    const result = await bridgeRequest<{ success: boolean; error?: string; evidence?: string }>(
+    const bridgeResult = await bridgeRequest<{ success: boolean; error?: string; evidence?: string }>(
       "/action",
       "POST",
       { action, ...params } as Record<string, unknown>
     );
-
-    if (!result) {
-      return fail(action, "Desktop bridge is not running. Install Nova Desktop Bridge for computer control.");
+    if (bridgeResult) {
+      return bridgeResult.success
+        ? ok(true, action, bridgeResult.evidence)
+        : fail(action, bridgeResult.error || "Action failed");
     }
 
-    return result.success
-      ? ok(true, action, result.evidence)
-      : fail(action, result.error || "Action failed");
+    const agentResult = await this.agentExecute(action, params);
+    if (agentResult) return agentResult;
+
+    return fail(action, agentRequiredMessage(action));
   }
 
   async click(action: MouseClickAction): Promise<ActionVerification> {
@@ -139,7 +169,10 @@ class WebDesktopAdapter implements DesktopAdapter {
 
   async listWindows(): Promise<WindowInfo[]> {
     const result = await bridgeRequest<{ windows: WindowInfo[] }>("/windows/list");
-    return result?.windows || [];
+    if (result?.windows) return result.windows;
+    const agent = await agentBridge.execute("app.listWindows", {});
+    const windows = (agent?.data as { windows?: WindowInfo[] } | undefined)?.windows;
+    return windows ?? [];
   }
 
   async focusWindow(action: FocusWindowAction): Promise<ActionVerification> {
@@ -164,7 +197,9 @@ class WebDesktopAdapter implements DesktopAdapter {
 
   async getActiveWindow(): Promise<WindowInfo | null> {
     const result = await bridgeRequest<{ window: WindowInfo }>("/windows/active");
-    return result?.window || null;
+    if (result?.window) return result.window;
+    const agent = await agentBridge.execute("app.activeWindow", {});
+    return (agent?.data as { window?: WindowInfo } | undefined)?.window ?? null;
   }
 
   async captureScreen(region?: Record<string, number>): Promise<string | null> {
@@ -173,11 +208,17 @@ class WebDesktopAdapter implements DesktopAdapter {
       "POST",
       { region }
     );
-    return result?.screenshot || null;
+    if (result?.screenshot) return result.screenshot;
+    const agent = await agentBridge.execute("screen.capture", {});
+    return (agent?.data as { screenshot?: string } | undefined)?.screenshot ?? null;
   }
 
   isAvailable(): boolean {
-    return this.bridgeOnline || (typeof navigator !== "undefined" && typeof navigator.clipboard !== "undefined");
+    return (
+      this.bridgeOnline ||
+      this.agentAvailable ||
+      (typeof navigator !== "undefined" && typeof navigator.clipboard !== "undefined")
+    );
   }
 
   getCapabilities(): string[] {
@@ -193,10 +234,14 @@ class WebDesktopAdapter implements DesktopAdapter {
 
 export const desktopAdapter = new WebDesktopAdapter();
 
-/** Check if the desktop bridge is reachable. */
+/** Check if the desktop bridge or a paired agent is reachable. */
 export async function checkDesktopBridge(): Promise<boolean> {
   const result = await bridgeRequest<{ status: string }>("/health");
   const online = result?.status === "ok";
   desktopAdapter.setBridgeOnline(online);
-  return online;
+  if (online) return true;
+  // Fall back to the paired Windows agent channel.
+  const agentOnline = await agentBridge.isAgentAvailable();
+  desktopAdapter.setAgentAvailable(agentOnline);
+  return agentOnline;
 }

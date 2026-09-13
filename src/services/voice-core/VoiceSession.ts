@@ -86,6 +86,13 @@ class VoiceSession {
 
   /** Start the continuous voice session. */
   async start(opts?: { requireWakeWord?: boolean }): Promise<boolean> {
+    // Kill switch: microphone disabled means no session, ever.
+    const { killSwitch } = await import("@/services/safety/KillSwitch");
+    if (!killSwitch.isEnabled("microphone")) {
+      voiceStateMachine.reset("sleeping");
+      this.notify();
+      return false;
+    }
     if (this.active) return true;
     this.active = true;
     this.setSilenceConfig();

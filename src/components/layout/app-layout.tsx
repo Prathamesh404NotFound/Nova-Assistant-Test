@@ -4,6 +4,7 @@ import { MobileNav } from "./mobile-nav";
 import { EnvironmentHud } from "@/components/nova/EnvironmentHud";
 import { PersistentVoiceOrb } from "@/components/nova/PersistentVoiceOrb";
 import { NovaPhaseStrip } from "@/components/nova/NovaPhaseStrip";
+import { KillSwitchPanicButton } from "@/components/nova/KillSwitchPanel";
 
 export function AppLayout({ children }: { children: ReactNode }) {
   return (
@@ -13,7 +14,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
         {/* HUD status rail: live Nova pipeline phase, always available. */}
         <div className="sticky top-0 z-30 hidden lg:flex items-center justify-between px-6 h-9 border-b border-nova-border/60 bg-[#060e1a]/70 backdrop-blur-md">
           <NovaPhaseStrip />
-          <div className="jarvis-rail-line h-px w-40" aria-hidden="true" />
+          <div className="flex items-center gap-3">
+            <KillSwitchPanicButton />
+            <div className="jarvis-rail-line h-px w-32" aria-hidden="true" />
+          </div>
         </div>
         {children}
       </main>

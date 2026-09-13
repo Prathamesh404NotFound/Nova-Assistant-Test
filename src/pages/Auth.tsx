@@ -11,7 +11,7 @@ import { isFirebaseConfigured } from "@/lib/env-validator";
 
 interface AuthProps { redirectAfterAuth?: string; }
 
-function resolveRedirectAfterAuth(returnTo: string | null, fallback = "/dashboard") {
+function resolveRedirectAfterAuth(returnTo: string | null, fallback = "/nova") {
   if (returnTo?.startsWith("/") && !returnTo.startsWith("//")) return returnTo;
   return fallback;
 }

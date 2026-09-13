@@ -1,0 +1,21 @@
+{
+  "name": "nova-windows-agent",
+  "version": "1.0.0",
+  "description": "Nova Windows Agent — the controlled local 'body' of Nova. Executes allowlisted desktop commands issued through the authenticated Nova cloud channel.",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsc -p tsconfig.json && node dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -10,6 +10,7 @@ import { ProactiveSettingsCard } from "@/components/settings/ProactiveSettingsCa
 import { voiceOutput } from "@/services/voice-core/VoiceOutput"; // canonical voice layer
 import type { VoiceSettings } from "@/services/tts/tts-router"; // settings type only
 import { checkFirebaseHealth } from "@/services/data/NovaCloudDataService";
+import { KillSwitchPanel } from "@/components/nova/KillSwitchPanel";
 import { useAuth } from "@/hooks/use-auth";
 import { permissionsService, REQUIRED_PERMISSIONS, type PermissionId } from "@/services/permissions";
 import { BARK_VOICE_PRESETS } from "@/services/tts/bark-voices";
@@ -169,6 +170,7 @@ export default function SettingsPage() {
         {/* ── General Tab ──────────────────────────── */}
         {activeTab === "general" && (
           <motion.div initial="hidden" animate="visible" variants={fadeUp} custom={1} className="space-y-4">
+            <KillSwitchPanel />
             <Card className="nova-glass p-5">
               <h3 className="text-sm font-semibold text-[#e8e8f8] mb-4">Application</h3>
               <div className="space-y-3">
